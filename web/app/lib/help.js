@@ -289,6 +289,40 @@ export const HELP = {
     ],
     source: "NSE delivery, F&O and deals reports",
   },
+  "screener.from_high": {
+    title: "From 52-Week High",
+    window: "52-week high vs latest close",
+    windowLong: "Distance of the latest close below the highest close of the trailing 52 weeks.",
+    what: "How far a stock has retraced from its one-year peak — a quick read on drawdown depth.",
+    how: [
+      "from_high = (close − 52-week high) ÷ 52-week high × 100, so the value is ≤ 0%.",
+      "0% means the stock is at a fresh high; −30% means it sits 30% below its peak.",
+      "Filter the table to surface names a chosen distance (10/20/30/40/50%) below their high.",
+    ],
+    benchmarks: [
+      { label: "≥ −5%", note: "near the high — momentum/breakout zone", tone: "up" },
+      { label: "−5%…−20%", note: "normal pullback", tone: "amber" },
+      { label: "≤ −30%", note: "deep drawdown — value or broken trend", tone: "down" },
+    ],
+    source: "Trailing 52-week closing highs from stored price history",
+  },
+  "screener.return_bands": {
+    title: "Performance Bands",
+    window: "1-month & 3-month trailing",
+    windowLong: "Trailing return over ~21 sessions (1M) or ~63 sessions (3M).",
+    what: "Liquid stocks bucketed by trailing return into magnitude bands — gainers and decliners.",
+    how: [
+      "Return = (latest close − close N sessions ago) ÷ that past close × 100.",
+      "Gainers band into +5/+10/+25/+50/+75/+100%+; decliners into −5/−10/−25/−50/−75%−.",
+      "Within each band stocks are ranked by the size of the move; band count shows the full breadth.",
+    ],
+    benchmarks: [
+      { label: "+25% or more", note: "strong momentum leaders", tone: "up" },
+      { label: "−5%…−25%", note: "softening trend", tone: "amber" },
+      { label: "−50% or worse", note: "severe decline", tone: "down" },
+    ],
+    source: "Trailing closes from stored ~1-year price history",
+  },
   "screener.multibaggers": {
     title: "KNN Multibagger Radar",
     window: "21-session forward · ~1yr training",

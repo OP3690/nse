@@ -12,6 +12,7 @@ const COLUMNS = [
   ["sector", "Sector", false, "hidden lg:table-cell"],
   ["close", "Price", true, "hidden sm:table-cell"],
   ["pct_change", "Chg %", true, ""],
+  ["from_high", "From High", true, "hidden lg:table-cell"],
   ["deliv_pct", "Deliv %", true, "hidden md:table-cell"],
   ["vol_surge", "Vol", true, "hidden xl:table-cell"],
   ["turnover_cr", "Turnover", true, "hidden lg:table-cell"],
@@ -24,6 +25,26 @@ const COLUMNS = [
 
 const SIGNALS = ["All", "Strong Accumulation", "Accumulation", "Neutral", "Distribution"];
 const PAGE_SIZES = [25, 50, 100];
+
+// Distance-from-52W-high filter. "near" keeps stocks within 5% of their high;
+// numeric keys keep stocks that have fallen at least that far below it.
+const FROM_HIGH = [
+  ["All", "Any distance"],
+  ["near", "Near high (≤5%)"],
+  ["10", "≥10% below high"],
+  ["20", "≥20% below high"],
+  ["30", "≥30% below high"],
+  ["40", "≥40% below high"],
+  ["50", "≥50% below high"],
+];
+
+// % below the 52-week high (value is ≤0). Green near the high, fading to red the
+// deeper the drawdown.
+function FromHighCell({ value }) {
+  if (value == null) return <span className="text-muted">—</span>;
+  const tone = value >= -5 ? "text-up" : value >= -20 ? "text-amber-500" : "text-down";
+  return <span className={`font-mono tabular-nums ${tone}`}>{value > 0 ? "+" : ""}{value.toFixed(1)}%</span>;
+}
 
 // Canonical display priority for the Index filter — broad tiers first. Any index
 // present on the rows but missing here sorts to the end, alphabetically.
@@ -44,6 +65,7 @@ export default function ScreenerTable({ rows, sectors }) {
   const [sector, setSector] = useState("All");
   const [signal, setSignal] = useState("All");
   const [index, setIndex] = useState("All");
+  const [fromHigh, setFromHigh] = useState("All");
   const [sortKey, setSortKey] = useState("score");
   const [asc, setAsc] = useState(false);
   const [page, setPage] = useState(1);
@@ -72,6 +94,12 @@ export default function ScreenerTable({ rows, sectors }) {
       if (sector !== "All" && e.sector !== sector) return false;
       if (signal !== "All" && e.signal !== signal) return false;
       if (index !== "All" && !(e.indices || []).includes(index)) return false;
+      if (fromHigh !== "All") {
+        const fh = e.from_high;
+        if (fh == null) return false;
+        if (fromHigh === "near") { if (fh < -5) return false; }
+        else if (fh > -Number(fromHigh)) return false; // not far enough below the high
+      }
       return true;
     });
     r = [...r].sort((a, b) => {
@@ -82,7 +110,7 @@ export default function ScreenerTable({ rows, sectors }) {
       return asc ? va - vb : vb - va;
     });
     return r;
-  }, [rows, q, sector, signal, index, sortKey, asc]);
+  }, [rows, q, sector, signal, index, fromHigh, sortKey, asc]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const curPage = Math.min(page, pageCount);
@@ -140,6 +168,10 @@ export default function ScreenerTable({ rows, sectors }) {
           className="bg-panel border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
           {SIGNALS.map((s) => <option key={s}>{s}</option>)}
         </select>
+        <select value={fromHigh} onChange={onFilter(setFromHigh)} title="Filter by distance below the 52-week high"
+          className="bg-panel border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
+          {FROM_HIGH.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        </select>
         {indexOptions.length > 0 && (
           <select value={index} onChange={onFilter(setIndex)} title="Filter by NSE index membership"
             className="bg-panel border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
@@ -173,6 +205,7 @@ export default function ScreenerTable({ rows, sectors }) {
                 <td className="td text-muted text-xs truncate hidden lg:table-cell" title={e.sector || undefined}>{e.sector || "—"}</td>
                 <td className="td text-right font-mono hidden sm:table-cell">{e.close?.toLocaleString("en-IN")}</td>
                 <td className="td text-right"><Pct value={e.pct_change} /></td>
+                <td className="td text-right hidden lg:table-cell"><FromHighCell value={e.from_high} /></td>
                 <td className="td text-right font-mono hidden md:table-cell">{e.deliv_pct != null ? `${e.deliv_pct.toFixed(0)}%` : "—"}</td>
                 <td className="td text-right font-mono hidden xl:table-cell">{e.vol_surge ? `${e.vol_surge.toFixed(1)}×` : "—"}</td>
                 <td className="td text-right font-mono hidden lg:table-cell">{e.turnover_cr?.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>

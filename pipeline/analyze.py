@@ -50,6 +50,73 @@ def _avg(xs):
     return sum(xs) / len(xs) if xs else None
 
 
+# Trailing % return over `sessions` trading days, from a per-symbol series
+# (oldest -> newest, as load_histories emits). None if the history is too short.
+def _trailing_return(series, sessions):
+    if not series or len(series) <= sessions:
+        return None
+    last = series[-1].get("close")
+    past = series[-1 - sessions].get("close")
+    if last is None or not past:
+        return None
+    return round((last - past) / past * 100, 1)
+
+
+# Performance-band buckets for trailing returns. Gainers run +5/10/25/50/75/100%
+# with an open-ended ">100%" top band; losers mirror it down to a "worse than
+# −75%" tail. Each band carries its full count plus the strongest members so the
+# UI can show "who's up 25–50% over the last 3 months" at a glance.
+_GAIN_EDGES = [5, 10, 25, 50, 75, 100]   # last band is open-ended (100%+)
+_LOSS_EDGES = [-5, -10, -25, -50, -75]   # last band is open-ended (≤ −75%)
+
+
+def _band_member(e, key):
+    return {
+        "symbol": e["symbol"], "company": e.get("company"), "sector": e.get("sector"),
+        "close": e.get("close"), "ret": e.get(key), "pct_change": e.get("pct_change"),
+    }
+
+
+def _bands_for(rows, key, top=15):
+    gain = [{"lo": _GAIN_EDGES[i],
+             "hi": _GAIN_EDGES[i + 1] if i + 1 < len(_GAIN_EDGES) else None,
+             "items": []} for i in range(len(_GAIN_EDGES))]
+    loss = [{"hi": _LOSS_EDGES[i],
+             "lo": _LOSS_EDGES[i + 1] if i + 1 < len(_LOSS_EDGES) else None,
+             "items": []} for i in range(len(_LOSS_EDGES))]
+    up = down = total = 0
+    for e in rows:
+        r = e.get(key)
+        if r is None:
+            continue
+        total += 1
+        if r >= _GAIN_EDGES[0]:
+            up += 1
+            for b in gain:
+                if r >= b["lo"] and (b["hi"] is None or r < b["hi"]):
+                    b["items"].append(_band_member(e, key))
+                    break
+        elif r <= _LOSS_EDGES[0]:
+            down += 1
+            for b in loss:
+                if r <= b["hi"] and (b["lo"] is None or r > b["lo"]):
+                    b["items"].append(_band_member(e, key))
+                    break
+    for b in gain:
+        b["items"].sort(key=lambda x: x["ret"], reverse=True)
+        b["count"] = len(b["items"]); b["items"] = b["items"][:top]
+    for b in loss:
+        b["items"].sort(key=lambda x: x["ret"])
+        b["count"] = len(b["items"]); b["items"] = b["items"][:top]
+    return {"gainers": gain, "losers": loss, "up": up, "down": down, "total": total}
+
+
+def build_return_bands(rows):
+    """Trailing-return performance bands at 1-month (~21 sessions) and 3-month
+    (~63 sessions) windows, split into gainers and losers."""
+    return {"1m": _bands_for(rows, "ret_1m"), "3m": _bands_for(rows, "ret_3m")}
+
+
 def latest_date(con) -> str | None:
     row = con.execute("SELECT MAX(date) d FROM delivery_daily").fetchone()
     return row["d"] if row else None
@@ -525,6 +592,21 @@ def build(con) -> dict:
         e["wk_high"] = wk.get(sym, {}).get("high")
         e["wk_low"] = wk.get(sym, {}).get("low")
 
+    # 52W-high drawdown + trailing returns for every headline stock (runs for all,
+    # not just the forecasted ones, so the screener filters/bands stay complete).
+    for e in headline:
+        sym = e["symbol"]
+        w = wk.get(sym, {})
+        if e.get("wk_high") is None:
+            e["wk_high"] = w.get("high")
+            e["wk_low"] = w.get("low")
+        hi, close = e.get("wk_high"), e.get("close")
+        # Signed % vs the 52-week high: 0 = at the high, negative = below it.
+        e["from_high"] = round((close - hi) / hi * 100, 1) if (hi and close) else None
+        series = histories.get(sym, [])
+        e["ret_1m"] = _trailing_return(series, 21)
+        e["ret_3m"] = _trailing_return(series, 63)
+
     rated = [e for e in headline if "trend_score" in e]
     uptrends = sorted(
         [e for e in rated if e["trend_label"] in ("Uptrend", "Strong Uptrend")],
@@ -634,6 +716,7 @@ def build(con) -> dict:
         },
         "multibaggers": multibaggers,
         "money_flow": build_money_flow(screener),
+        "return_bands": build_return_bands(headline),
         "screener": headline,
     }
     # carried for emit_histories, popped before serialization

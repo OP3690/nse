@@ -3,6 +3,7 @@ import { PageHeader } from "../components/ui";
 import ScreenerTable from "../components/ScreenerTable";
 import ScreenerInsights from "../components/ScreenerInsights";
 import MultibaggerSpotlight from "../components/MultibaggerSpotlight";
+import PerformanceBands from "../components/PerformanceBands";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export default async function ScreenerPage() {
         cross-sectional insight charts. Click a column to sort, a symbol for its flow history.
       </PageHeader>
       <MultibaggerSpotlight multibaggers={d.multibaggers} />
+      <PerformanceBands data={d.return_bands} />
       <ScreenerInsights rows={d.screener} multibaggers={d.multibaggers} />
       <ScreenerTable rows={d.screener} sectors={sectors} />
     </div>
