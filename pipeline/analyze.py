@@ -257,6 +257,55 @@ def fiidii_history(con) -> list[dict]:
     return list(by_date.values())
 
 
+def build_money_flow(screener: list[dict]) -> dict:
+    """Delivery-backed money flow: delivered turnover (turnover x deliv%) signed by
+    the day's price direction — up = money IN (accumulation), down = OUT. Two
+    universes for the dashboard toggle so the user can choose the lens:
+
+      * "liquid" (default, trustworthy): only names with turnover >= MIN_TURNOVER_LACS.
+      * "all": every traded stock that moved, however thin.
+
+    Each carries aggregate totals + counts + the top-12 inflow/outflow names, so the
+    client just renders (no need to ship the full 2600-row universe)."""
+    def variant(rows: list[dict]) -> dict:
+        flows = []
+        for e in rows:
+            pct = e.get("pct_change")
+            turn = e.get("turnover_cr")
+            if pct in (None, 0) or turn is None:
+                continue
+            dp = e.get("deliv_pct")
+            delivered = turn * (dp / 100) if dp is not None else turn
+            if delivered <= 0:
+                continue
+            flows.append({
+                "symbol": e["symbol"], "company": e.get("company"),
+                "sector": e.get("sector"), "pct_change": pct,
+                "deliv_pct": dp, "delivBacked": dp is not None,
+                "vol_surge": e.get("vol_surge"),
+                "flowCr": round(delivered * (1 if pct > 0 else -1), 2),
+            })
+        inflow = sorted((f for f in flows if f["flowCr"] > 0), key=lambda x: -x["flowCr"])
+        outflow = sorted((f for f in flows if f["flowCr"] < 0), key=lambda x: x["flowCr"])
+        in_total = round(sum(f["flowCr"] for f in inflow), 1)
+        out_total = round(sum(f["flowCr"] for f in outflow), 1)  # negative
+        denom = in_total + abs(out_total)
+        return {
+            "in_total": in_total, "out_total": out_total,
+            "net": round(in_total + out_total, 1),
+            "in_count": len(inflow), "out_count": len(outflow),
+            "balance": round(in_total / denom * 100) if denom else 0,
+            "top_in": inflow[:12], "top_out": outflow[:12],
+        }
+    # Both lenses keep the non-stock exclusion (ETFs / rights / etc. were never
+    # part of this view); the toggle only flips the *liquidity* floor.
+    stocks = [e for e in screener if _is_stock(e["symbol"])]
+    return {
+        "liquid": variant([e for e in stocks if e.get("liquid")]),
+        "all": variant(stocks),
+    }
+
+
 def _vol_spark(series, n=12):
     """Last n volumes scaled to 0..100 (by window max) for a compact sparkline."""
     vols = [h.get("volume") for h in (series or []) if h.get("volume")]
@@ -584,6 +633,7 @@ def build(con) -> dict:
             "top_pans": model_pans[:40],
         },
         "multibaggers": multibaggers,
+        "money_flow": build_money_flow(screener),
         "screener": headline,
     }
     # carried for emit_histories, popped before serialization

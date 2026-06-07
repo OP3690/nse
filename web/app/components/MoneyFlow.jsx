@@ -1,46 +1,33 @@
+"use client";
+
+import { useState } from "react";
 import { Pct, SymbolLink } from "./ui";
 import InfoDot from "./InfoDot";
-import { fmtCr } from "../lib/data";
 
-// Delivery-backed money flow, derived from the latest session's screener rows.
-// Real demat money that changed hands = turnover x delivery%, signed by the
-// day's price direction: price up on delivery = money flowing IN (accumulation),
-// price down = money flowing OUT (distribution). Same transparent proxy the rest
-// of the app uses, since per-stock cash flows aren't published.
-function computeFlow(screener, { minTurnoverCr = 2 } = {}) {
-  const rows = (screener || [])
-    .filter(
-      (e) =>
-        e.liquid &&
-        e.turnover_cr != null &&
-        e.turnover_cr >= minTurnoverCr &&
-        e.pct_change != null &&
-        e.pct_change !== 0
-    )
-    .map((e) => {
-      const delivFrac = e.deliv_pct != null ? e.deliv_pct / 100 : null;
-      const deliveredCr = delivFrac != null ? e.turnover_cr * delivFrac : e.turnover_cr;
-      return { ...e, deliveredCr, delivBacked: delivFrac != null, flowCr: deliveredCr * Math.sign(e.pct_change) };
-    })
-    .filter((e) => e.deliveredCr > 0);
+// Delivery-backed money flow: real demat money that changed hands = turnover x
+// delivery%, signed by the day's price direction (up on delivery = money IN /
+// accumulation, down = OUT / distribution). The server precomputes two lenses —
+// "liquid" (turnover >= ₹5 Cr, the trustworthy default) and "all" traded stocks —
+// each with aggregate totals + the top-12 inflow/outflow names. This component
+// just renders the chosen lens, toggled by the user.
+const fmtCr = (n) =>
+  n == null
+    ? "—"
+    : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: Math.abs(n) >= 100 ? 0 : 1 })} Cr`;
 
-  const inflow = rows.filter((e) => e.flowCr > 0).sort((a, b) => b.flowCr - a.flowCr);
-  const outflow = rows.filter((e) => e.flowCr < 0).sort((a, b) => a.flowCr - b.flowCr);
-  const inTotal = inflow.reduce((s, e) => s + e.flowCr, 0);
-  const outTotal = outflow.reduce((s, e) => s + e.flowCr, 0); // negative
-  return { inflow, outflow, inTotal, outTotal, net: inTotal + outTotal };
-}
-
-function FlowColumn({ title, rows, tone, max }) {
+function FlowColumn({ title, rows, tone, max, total }) {
   const isIn = tone === "in";
   const accent = isIn ? "text-up" : "text-down";
   const barBg = isIn ? "bg-up/70" : "bg-down/70";
+  const shown = Math.min(rows.length, 12);
   return (
     <div className="rounded-xl border border-line bg-panel2/40 overflow-hidden">
       <div className={`flex items-center gap-2 px-4 py-2.5 border-b border-line ${isIn ? "bg-up/5" : "bg-down/5"}`}>
         <span className={`w-2 h-2 rounded-full ${isIn ? "bg-up" : "bg-down"}`} />
         <span className={`text-sm font-bold ${accent}`}>{title}</span>
-        <span className="ml-auto text-xs text-muted">{rows.length} stocks</span>
+        <span className="ml-auto text-xs text-muted">
+          {total > shown ? `top ${shown} of ${total}` : `${total} stocks`}
+        </span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">
@@ -91,11 +78,50 @@ function FlowColumn({ title, rows, tone, max }) {
   );
 }
 
-export default function MoneyFlow({ screener }) {
-  const { inflow, outflow, inTotal, outTotal, net } = computeFlow(screener);
+function Toggle({ value, onChange, liquidCount, allCount }) {
+  const opts = [
+    { key: "liquid", label: "Liquid", sub: "₹5 Cr+", count: liquidCount },
+    { key: "all", label: "All stocks", sub: "full market", count: allCount },
+  ];
+  return (
+    <div className="inline-flex items-stretch rounded-lg border border-line bg-panel2/40 p-0.5 text-xs shrink-0">
+      {opts.map((o) => {
+        const active = value === o.key;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => onChange(o.key)}
+            className={`px-3 py-1.5 rounded-md transition leading-tight ${
+              active ? "bg-accent/20 text-white" : "text-muted hover:text-white"
+            }`}
+            title={`${o.label} — ${o.sub}`}
+          >
+            <span className="font-semibold">{o.label}</span>
+            {o.count != null && (
+              <span className="ml-1.5 font-mono text-[10px] text-muted">{o.count}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function MoneyFlow({ data }) {
+  const [lens, setLens] = useState("liquid"); // liquid filter ON by default
+  const v = data?.[lens] || data?.liquid;
+  if (!v) return null;
+
+  const inflow = v.top_in || [];
+  const outflow = v.top_out || [];
+  const inTotal = v.in_total || 0;
+  const outTotal = v.out_total || 0; // negative
+  const net = v.net || 0;
+  const inShare = v.balance ?? 0;
   const max = Math.max(inflow[0]?.flowCr || 0, Math.abs(outflow[0]?.flowCr || 0));
-  const gross = inTotal + Math.abs(outTotal) || 1;
-  const inShare = Math.round((inTotal / gross) * 100);
+  const liquidCount = (data?.liquid?.in_count || 0) + (data?.liquid?.out_count || 0);
+  const allCount = (data?.all?.in_count || 0) + (data?.all?.out_count || 0);
 
   return (
     <section className="card p-5">
@@ -107,6 +133,7 @@ export default function MoneyFlow({ screener }) {
             the day&apos;s price direction. Rising price on delivery = money in; falling = money out.
           </p>
         </div>
+        <Toggle value={lens} onChange={setLens} liquidCount={liquidCount} allCount={allCount} />
       </div>
 
       {/* summary strip */}
@@ -114,12 +141,12 @@ export default function MoneyFlow({ screener }) {
         <div className="mini-card">
           <div className="stat-label">Money In</div>
           <div className="stat-value text-up">{fmtCr(inTotal)}</div>
-          <div className="text-[11px] text-muted">{inflow.length} stocks rising on delivery</div>
+          <div className="text-[11px] text-muted">{v.in_count} stocks rising on delivery</div>
         </div>
         <div className="mini-card">
           <div className="stat-label">Money Out</div>
           <div className="stat-value text-down">{fmtCr(Math.abs(outTotal))}</div>
-          <div className="text-[11px] text-muted">{outflow.length} stocks falling</div>
+          <div className="text-[11px] text-muted">{v.out_count} stocks falling</div>
         </div>
         <div className="mini-card">
           <div className="stat-label">Net Flow</div>
@@ -138,8 +165,8 @@ export default function MoneyFlow({ screener }) {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <FlowColumn title="Flowing In — Accumulation" rows={inflow} tone="in" max={max} />
-        <FlowColumn title="Flowing Out — Distribution" rows={outflow} tone="out" max={max} />
+        <FlowColumn title="Flowing In — Accumulation" rows={inflow} tone="in" max={max} total={v.in_count} />
+        <FlowColumn title="Flowing Out — Distribution" rows={outflow} tone="out" max={max} total={v.out_count} />
       </div>
     </section>
   );

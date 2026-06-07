@@ -149,7 +149,7 @@ export default async function Dashboard() {
       {d.movers && <MoversBoard movers={d.movers} />}
 
       {/* money in / money out */}
-      <MoneyFlow screener={d.screener} />
+      {d.money_flow && <MoneyFlow data={d.money_flow} />}
 
       {/* top accumulation */}
       <Section title="Top Smart-Money Accumulation" href="/screener" action="Open screener →" info="accumulation">
