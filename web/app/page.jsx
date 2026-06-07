@@ -1,5 +1,5 @@
 import { getLatest, fmtCr } from "./lib/data";
-import { Pct, SignalBadge, OiBadge, Stat, Section, Score, SymbolLink, PageHeader } from "./components/ui";
+import { Pct, SignalBadge, OiBadge, Stat, BreadthStat, Section, Score, SymbolLink, PageHeader } from "./components/ui";
 import { FiiDiiChart } from "./components/charts";
 import MoneyFlow from "./components/MoneyFlow";
 import MoversBoard from "./components/MoversBoard";
@@ -14,6 +14,53 @@ function NoData() {
         Run the pipeline first: <code className="text-accent">cd pipeline && python3 run_daily.py</code>
       </p>
     </div>
+  );
+}
+
+// Headline index tiles (Nifty 50, Sensex, India VIX) — left-aligned, each a
+// vertical stack of label / value / % change, shown under the dashboard title.
+function IndexTicker({ items }) {
+  if (!items?.length) return null;
+  return (
+    <div className="flex items-stretch divide-x divide-line rounded-xl border border-line bg-panel2/40 overflow-hidden">
+      {items.map((ix) => {
+        const up = (ix.pct ?? 0) >= 0;
+        // VIX is inverted — a rising VIX is risk-off, so colour it red when up.
+        const good = ix.invert ? !up : up;
+        const tone = ix.pct == null ? "text-muted" : good ? "text-up" : "text-down";
+        const dec = ix.decimals;
+        const fmt = (n) => Number(n).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+        return (
+          <div key={ix.label} className="flex flex-col gap-0.5 px-4 py-2.5 transition hover:bg-panel2/70">
+            <span className="text-[10px] uppercase tracking-wider text-muted font-semibold">{ix.label}</span>
+            <span className="font-mono text-base font-bold text-white tabular-nums leading-tight">{fmt(ix.last)}</span>
+            <span className={`font-mono text-[11px] font-semibold tabular-nums ${tone}`}>
+              {ix.pct == null ? "—" : (
+                <>{up ? "▲ +" : "▼ "}{ix.change != null ? fmt(ix.change) : ""} ({up ? "+" : ""}{Number(ix.pct).toFixed(2)}%)</>
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// % change vs the previous session, signed. Uses |prev| so the sign reflects
+// whether the figure rose or fell even when the value itself is negative
+// (e.g. FII net flipping from -2,000 to -8,000 is a deeper outflow → down).
+function sessionDelta(curr, prev) {
+  if (curr == null || prev == null || prev === 0) return null;
+  return ((curr - prev) / Math.abs(prev)) * 100;
+}
+
+function DeltaChip({ pct }) {
+  if (pct == null || !isFinite(pct)) return null;
+  const up = pct >= 0;
+  return (
+    <span className={`font-mono text-[11px] font-semibold tabular-nums ${up ? "text-up" : "text-down"}`}>
+      {up ? "▲ +" : "▼ -"}{Math.abs(pct).toFixed(1)}% vs prev
+    </span>
   );
 }
 
@@ -34,15 +81,22 @@ export default async function Dashboard() {
   const breadth = m.advances + m.declines || 1;
   const advPct = Math.round((m.advances / breadth) * 100);
 
+  // Previous-session figures for the +/- deltas on the headline stat tiles.
+  const prevSession = fiidii?.history?.length > 1 ? fiidii.history[fiidii.history.length - 2] : null;
+  const fiiDelta = sessionDelta(fii, prevSession?.fii);
+  const diiDelta = sessionDelta(dii, prevSession?.dii);
+  const turnoverDelta = sessionDelta(m.total_turnover_cr, m.total_turnover_cr_prev);
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Money Flow Dashboard"
         chip="Latest session"
+        titleAside={d.headline_indices?.length > 0 ? <IndexTicker items={d.headline_indices} /> : null}
         meta={
           <>
-            <div className="text-sm font-semibold text-white">{d.date}</div>
-            <div className="text-xs text-muted">{d.dates.length} sessions tracked</div>
+            <div className="text-xs font-semibold text-white">{d.date}</div>
+            <div className="text-[11px] text-muted">{d.dates.length} sessions tracked</div>
           </>
         }
       >
@@ -52,12 +106,12 @@ export default async function Dashboard() {
       {/* top stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat label="FII Net" value={fmtCr(fii)} accent={fii >= 0 ? "text-up" : "text-down"}
-          sub={fii >= 0 ? "Foreign buying" : "Foreign selling"} info="dash.fii" />
+          sub={fii >= 0 ? "Foreign buying" : "Foreign selling"} delta={<DeltaChip pct={fiiDelta} />} info="dash.fii" />
         <Stat label="DII Net" value={fmtCr(dii)} accent={dii >= 0 ? "text-up" : "text-down"}
-          sub={dii >= 0 ? "Domestic buying" : "Domestic selling"} info="dash.dii" />
-        <Stat label="Market Breadth" value={`${m.advances} / ${m.declines}`}
-          accent={advPct >= 50 ? "text-up" : "text-down"} sub={`${advPct}% advancing`} info="dash.breadth" />
-        <Stat label="Total Turnover" value={fmtCr(m.total_turnover_cr)} sub={`${m.stocks} stocks traded`} info="dash.turnover" />
+          sub={dii >= 0 ? "Domestic buying" : "Domestic selling"} delta={<DeltaChip pct={diiDelta} />} info="dash.dii" />
+        <BreadthStat advances={m.advances} declines={m.declines} unchanged={m.unchanged} info="dash.breadth" />
+        <Stat label="Total Turnover" value={fmtCr(m.total_turnover_cr)} sub={`${m.stocks} stocks traded`}
+          delta={<DeltaChip pct={turnoverDelta} />} info="dash.turnover" />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">

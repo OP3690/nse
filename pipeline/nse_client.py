@@ -61,6 +61,10 @@ NSDL_FPI_URL = "https://www.fpi.nsdl.co.in/web/Reports/Latest.aspx"
 # recent window; figures match NSE. Third-party site, no warmup needed.
 MC_FIIDII_URL = "https://www.moneycontrol.com/markets/fii-dii-data/cash/"
 
+# BSE Sensex isn't on NSE's allIndices feed (it's a BSE index). Yahoo Finance's
+# chart API carries ^BSESN reliably server-side — used only for the headline tile.
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=5d&interval=1d"
+
 
 class NSEClient:
     def __init__(self):
@@ -142,6 +146,23 @@ class NSEClient:
 
     def all_indices(self):
         return self.get_json(ALLINDICES_API).get("data", [])
+
+    def bse_sensex(self) -> dict | None:
+        """BSE Sensex headline quote via Yahoo (^BSESN): {last, pct}. NSE's feed
+        has no Sensex, so this is the one cross-source for the headline tile.
+        Returns None on any failure (the tile just hides)."""
+        url = YAHOO_CHART_URL.format(sym="%5EBSESN")
+        try:
+            r = self.s.get(url, timeout=20)
+            r.raise_for_status()
+            meta = r.json()["chart"]["result"][0]["meta"]
+            last = meta.get("regularMarketPrice")
+            prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+            if last is None or not prev:
+                return None
+            return {"last": round(last, 2), "pct": round((last - prev) / prev * 100, 2)}
+        except Exception:  # noqa: BLE001
+            return None
 
     def nsdl_fpi(self) -> str:
         """Raw HTML of NSDL's daily FPI trends page (no NSE warmup needed)."""

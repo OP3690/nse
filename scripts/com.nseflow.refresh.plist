@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS launchd job: fast incremental refresh every 6 hours.
+  Keeps the latest session + live snapshots (index/VIX, FII/DII) and the KNN
+  Multibagger Radar current without refetching immutable history.
+
+  Install:
+    cp scripts/com.nseflow.refresh.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.nseflow.refresh.plist
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.nseflow.refresh.plist
+
+  StartInterval is in seconds: 21600 = 6 hours. launchd also fires a catch-up run
+  at load if a scheduled interval was missed while the Mac was asleep/off.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nseflow.refresh</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/omprakashutaha/Desktop/nse-flow/scripts/refresh.sh</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>21600</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/omprakashutaha/Desktop/nse-flow/logs/refresh.launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/omprakashutaha/Desktop/nse-flow/logs/refresh.launchd.err.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>

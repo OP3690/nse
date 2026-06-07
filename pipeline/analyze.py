@@ -136,6 +136,46 @@ def load_indices(con) -> list[dict]:
         'SELECT * FROM indices_daily WHERE date = ?', (row["d"],))]
 
 
+# Headline index tiles for the dashboard hero. Nifty 50 + India VIX come from
+# NSE's own allIndices feed; Sensex is appended at download time (Yahoo ^BSESN).
+HEADLINE_INDICES = [
+    ("NIFTY 50", "Nifty 50", 2, False),
+    ("SENSEX", "Sensex", 2, False),
+    ("INDIA VIX", "India VIX", 2, True),  # invert: a rising VIX is risk-off
+]
+
+
+def headline_indices(idx_rows: list[dict]) -> list[dict]:
+    """Pick the three headline quotes (value + % change) for the dashboard hero."""
+    by = {(r.get("index") or "").upper(): r for r in idx_rows}
+    out = []
+    for key, label, dec, invert in HEADLINE_INDICES:
+        r = by.get(key)
+        if r and r.get("last") is not None:
+            last = r["last"]
+            pct = r.get("pct")
+            # NSE stores only last + % change, so derive the absolute point move:
+            # prev = last / (1 + pct/100); change = last - prev.
+            change = None
+            if pct is not None and (100 + pct) != 0:
+                change = round(last - last / (1 + pct / 100), 2)
+            out.append({
+                "label": label, "last": last, "pct": pct, "change": change,
+                "decimals": dec, "invert": invert,
+            })
+    return out
+
+
+def session_turnover(con, date: str | None) -> float | None:
+    """Total EQ/BE turnover (₹ Cr) for one session — used for prev-day deltas."""
+    if not date:
+        return None
+    row = con.execute(
+        """SELECT SUM(turnover_lacs) t FROM delivery_daily
+           WHERE date = ? AND series IN ('EQ','BE')""", (date,)).fetchone()
+    return round((row["t"] or 0) / 100, 1) if row and row["t"] else None
+
+
 def fo_signals(con, date: str) -> dict[str, dict]:
     """Aggregate futures OI per underlying and classify the buildup."""
     rows = con.execute(
@@ -505,15 +545,19 @@ def build(con) -> dict:
     # Compact per-symbol meta for the rich hover-card (shared lookup map).
     tooltips = build_tooltips(headline, histories)
 
+    _all_dates = available_dates(con)
+    _prev_date = _all_dates[-2] if len(_all_dates) >= 2 else None
     data = {
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "date": date,
-        "dates": available_dates(con),
+        "dates": _all_dates,
         "market": {
             "advances": adv, "declines": dec, "unchanged": unch,
             "total_turnover_cr": round(total_turnover_lacs / 100, 1),
+            "total_turnover_cr_prev": session_turnover(con, _prev_date),
             "stocks": len(screener),
         },
+        "headline_indices": headline_indices(idx_rows),
         "regime": regime,
         "index_sectors": index_sectors,
         "fiidii": {"latest": fii_latest, "history": fh},

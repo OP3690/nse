@@ -1,6 +1,7 @@
 import "./globals.css";
 import Link from "next/link";
 import NavBar from "./components/NavBar";
+import SyncButton from "./components/SyncButton";
 
 export const metadata = {
   title: "NSE Flow — where the money is moving",
@@ -21,6 +22,7 @@ export default function RootLayout({ children }) {
               <NavBar />
             </div>
             <div className="ml-auto flex items-center gap-2 text-xs text-muted">
+              <SyncButton />
               <span className="hidden sm:inline-flex chip chip-muted">
                 <span className="w-1.5 h-1.5 rounded-full bg-up mr-1 animate-pulse" />
                 Money-flow analytics
