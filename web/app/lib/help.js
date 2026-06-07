@@ -323,6 +323,24 @@ export const HELP = {
     ],
     source: "Trailing closes from stored ~1-year price history",
   },
+  "screener.sector_matrix": {
+    title: "Sector Rotation Matrix",
+    window: "Today · 1M · 3M, vs market",
+    windowLong: "Per-sector averages over the latest session, trailing 1-month and 3-month windows, with phase set by performance relative to the whole liquid universe.",
+    what: "Every sector's breadth, momentum, drawdown, smart-money score and institutional flow on one grid, with an RRG-style rotation phase.",
+    how: [
+      "Each liquid stock is grouped by sector; sectors with fewer than 3 names are dropped as too thin to read.",
+      "Per sector: average today %, 1M and 3M return, distance from 52-week high, smart-money score, plus advancing/declining breadth and summed institutional net flow.",
+      "Phase compares a sector's 1M and 3M return to the market average — Leading (both strong), Improving (short-term turning up), Weakening (long-term strong but fading), Lagging (both weak).",
+      "Heat shading scales each return cell green→red so leaders and laggards pop; click any column header to re-sort.",
+    ],
+    benchmarks: [
+      { label: "Leading", note: "out-performing on both 1M and 3M", tone: "up" },
+      { label: "Improving", note: "1M turning up while 3M still soft", tone: "accent" },
+      { label: "Lagging", note: "behind market on both horizons", tone: "down" },
+    ],
+    source: "Cross-sectional aggregation of the liquid screener universe",
+  },
   "screener.multibaggers": {
     title: "KNN Multibagger Radar",
     window: "21-session forward · ~1yr training",

@@ -3,6 +3,7 @@ import { PageHeader } from "../components/ui";
 import ScreenerTable from "../components/ScreenerTable";
 import ScreenerInsights from "../components/ScreenerInsights";
 import MultibaggerSpotlight from "../components/MultibaggerSpotlight";
+import SectorMatrix from "../components/SectorMatrix";
 import PerformanceBands from "../components/PerformanceBands";
 import FromHighBands from "../components/FromHighBands";
 
@@ -31,6 +32,7 @@ export default async function ScreenerPage() {
         cross-sectional insight charts. Click a column to sort, a symbol for its flow history.
       </PageHeader>
       <MultibaggerSpotlight multibaggers={d.multibaggers} />
+      <SectorMatrix rows={d.screener} />
       <PerformanceBands data={d.return_bands} />
       <FromHighBands rows={d.screener} />
       <ScreenerInsights rows={d.screener} multibaggers={d.multibaggers} />
