@@ -180,27 +180,39 @@ function UpcomingIPOs({ upcoming }) {
   );
 }
 
+// Podium accents for the top three strength leaders — gold / silver / bronze.
+const MEDAL = {
+  1: { badge: "bg-amber-400/20 text-amber-300 border-amber-400/40", ring: "border-amber-400/30", glow: "bg-amber-400/10" },
+  2: { badge: "bg-slate-300/20 text-slate-200 border-slate-300/40", ring: "border-slate-300/25", glow: "bg-slate-300/10" },
+  3: { badge: "bg-orange-400/20 text-orange-300 border-orange-400/40", ring: "border-orange-400/25", glow: "bg-orange-400/10" },
+};
+
 function LeaderCard({ e, rank }) {
+  const m = MEDAL[rank];
   return (
-    <Link href={`/stock/${e.symbol}`} className="mini-card block hover:border-accent/50 transition group">
-      <div className="flex items-start justify-between gap-2">
+    <Link href={`/stock/${e.symbol}`}
+      className={`mini-card relative block overflow-hidden transition group hover:-translate-y-0.5 hover:border-accent/50 ${m ? m.ring : ""}`}>
+      {m && <div className={`absolute -top-10 -right-8 w-28 h-28 rounded-full blur-2xl pointer-events-none ${m.glow}`} />}
+      <div className="relative flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-muted">#{rank}</span>
+            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md border text-[10px] font-bold shrink-0 ${m ? m.badge : "border-line text-muted"}`}>
+              {rank}
+            </span>
             <span className="font-bold text-white group-hover:text-accent truncate">{e.symbol}</span>
           </div>
-          <div className="text-[11px] text-muted truncate">{e.company || e.sector || "—"}</div>
+          <div className="text-[11px] text-muted truncate mt-0.5">{e.company || e.sector || "—"}</div>
         </div>
         <BoardChip board={e.board} />
       </div>
-      <div className="mt-2 flex items-end justify-between">
+      <div className="relative mt-3 flex items-end justify-between">
         <div>
           <div className="text-[10px] text-muted uppercase tracking-wide">Since IPO</div>
           <Ret value={e.ret_issue} big />
         </div>
         <Spark series={e.series} issue={e.issue_price} />
       </div>
-      <div className="mt-2">
+      <div className="relative mt-3">
         <StrengthBar value={e.strength} label={e.strength_label} />
       </div>
     </Link>
@@ -258,13 +270,24 @@ export default function IpoView({ ipo }) {
           <div className="text-xs text-muted">since issue price</div>
         </div>
         <div className="stat-tile">
-          <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-up/80 to-transparent" />
-          <div className="stat-label">Best / Worst</div>
-          <div className="stat-value text-white text-lg">
-            <span className="text-up">{s.best?.symbol}</span>
-            <span className="text-muted text-sm font-normal"> +{s.best?.ret}%</span>
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-up/80 via-down/40 to-transparent" />
+          <div className="stat-label">Best & Worst</div>
+          <div className="mt-1 space-y-1.5">
+            <Link href={`/stock/${s.best?.symbol}`} className="flex items-center justify-between gap-2 group">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="text-up text-xs">▲</span>
+                <span className="font-semibold text-white group-hover:text-accent truncate">{s.best?.symbol}</span>
+              </span>
+              <span className="font-mono text-sm font-bold text-up tabular-nums shrink-0">+{s.best?.ret}%</span>
+            </Link>
+            <Link href={`/stock/${s.worst?.symbol}`} className="flex items-center justify-between gap-2 group">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="text-down text-xs">▼</span>
+                <span className="font-semibold text-white group-hover:text-accent truncate">{s.worst?.symbol}</span>
+              </span>
+              <span className="font-mono text-sm font-bold text-down tabular-nums shrink-0">{s.worst?.ret}%</span>
+            </Link>
           </div>
-          <div className="text-xs text-muted truncate"><span className="text-down">{s.worst?.symbol}</span> {s.worst?.ret}%</div>
         </div>
       </div>
 
@@ -317,8 +340,12 @@ export default function IpoView({ ipo }) {
           </thead>
           <tbody>
             {rows.map((e, i) => (
-              <tr key={e.symbol} className="hover:bg-panel2/50 align-middle">
-                <td className="td text-muted font-mono text-xs">{i + 1}</td>
+              <tr key={e.symbol} className={`align-middle transition-colors hover:bg-panel2/60 ${i % 2 ? "bg-panel2/20" : ""}`}>
+                <td className="td font-mono text-xs">
+                  {i < 3
+                    ? <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md border text-[10px] font-bold ${MEDAL[i + 1].badge}`}>{i + 1}</span>
+                    : <span className="text-muted">{i + 1}</span>}
+                </td>
                 <td className="td">
                   <div className="flex items-center gap-2">
                     <Link href={`/stock/${e.symbol}`} className="font-semibold hover:text-accent">{e.symbol}</Link>
