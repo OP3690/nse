@@ -1,37 +1,87 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import StockTip from "./StockTip";
 import InfoDot from "./InfoDot";
 
 const WINDOWS = [
-  ["1m", "1 Month", 21],
-  ["3m", "3 Months", 63],
+  ["1m", "1 Month"],
+  ["3m", "3 Months"],
 ];
+
+const UP = "22 199 132";   // #16c784
+const DOWN = "234 57 67";  // #ea3943
 
 const fmtRet = (v) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${Number(v).toFixed(1)}%`);
 
-// Human label for a gainer band given its lower / upper edge (% return).
+// Full / compact labels for a gainer band given its lower / upper edge.
 function gainLabel(lo, hi) {
   return hi == null ? `+${lo}% and above` : `+${lo}% to +${hi}%`;
 }
-// Human label for a loser band. `hi` is the shallower (closer-to-zero) edge.
+function gainShort(lo, hi) {
+  return hi == null ? `${lo}+` : `${lo}–${hi}`;
+}
+// `hi` is the shallower (closer-to-zero) edge for a decliner band.
 function lossLabel(hi, lo) {
   return lo == null ? `${hi}% and below` : `${hi}% to ${lo}%`;
 }
+function lossShort(hi, lo) {
+  return lo == null ? `${Math.abs(hi)}+` : `${Math.abs(lo)}–${Math.abs(hi)}`;
+}
 
-// One band card: header (label + count) and the ranked stock list.
-function BandCard({ title, count, items, gain }) {
-  const accent = gain ? "text-up" : "text-down";
-  const dot = gain ? "bg-up" : "bg-down";
+// Diverging distribution: decliner bars (red) left of a zero divider, gainer
+// bars (green) right. Bar height ∝ count; deeper magnitudes render more vivid.
+function Distribution({ bars }) {
+  const max = Math.max(1, ...bars.map((b) => b.count));
+  // splice a divider marker where the sign flips so left/right read as a gap
+  const cells = [];
+  bars.forEach((b, i) => {
+    if (i > 0 && bars[i - 1].side !== b.side) cells.push({ divider: true, key: `div${i}` });
+    cells.push({ ...b, key: `bar${i}` });
+  });
   return (
-    <div className="rounded-xl border border-line bg-panel2/40 p-3 flex flex-col min-w-0">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="flex items-center gap-1.5 min-w-0">
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
-          <span className={`text-sm font-bold tabular-nums ${accent}`}>{title}</span>
-        </span>
-        <span className="chip chip-muted text-[10px] shrink-0">{count}</span>
+    <div className="rounded-xl border border-line bg-panel2/30 px-3 pt-3 pb-2">
+      <div className="flex items-end gap-1.5 h-28">
+        {cells.map((b) =>
+          b.divider ? (
+            <div key={b.key} className="w-px self-stretch bg-line/80 mx-0.5" />
+          ) : (
+            <div key={b.key} title={`${b.full}: ${b.count}`}
+              className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0 group">
+              <span className="text-[10px] font-mono tabular-nums text-muted group-hover:text-white transition">{b.count || ""}</span>
+              <div className="w-full rounded-t-sm transition-all group-hover:brightness-125"
+                style={{ height: `${b.count ? Math.max(4, (b.count / max) * 92) : 2}px`, backgroundColor: `rgb(${b.rgb} / ${b.alpha})` }} />
+            </div>
+          )
+        )}
+      </div>
+      <div className="flex gap-1.5 mt-1.5">
+        {cells.map((b) =>
+          b.divider ? (
+            <div key={b.key} className="w-px mx-0.5" />
+          ) : (
+            <span key={b.key} className={`flex-1 text-center text-[9px] font-mono tabular-nums ${b.side === "up" ? "text-up/70" : "text-down/70"}`}>
+              {b.short}
+            </span>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+// One band card: header (label + count) with a count-share fill bar, then list.
+function BandCard({ title, count, share, items, gain }) {
+  const accent = gain ? "text-up" : "text-down";
+  const rgb = gain ? UP : DOWN;
+  return (
+    <div className="rounded-xl border border-line bg-panel2/40 p-3 flex flex-col min-w-0 transition hover:border-line/0 hover:ring-1 hover:ring-line">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`text-sm font-bold tabular-nums ${accent}`}>{title}</span>
+        <span className="font-mono text-xs font-semibold text-white tabular-nums shrink-0">{count}</span>
+      </div>
+      <div className="h-1 rounded-full bg-line/60 overflow-hidden my-2">
+        <div className="h-full rounded-full" style={{ width: `${Math.max(4, share * 100)}%`, backgroundColor: `rgb(${rgb} / 0.85)` }} />
       </div>
       {items.length === 0 ? (
         <div className="text-xs text-muted py-1">—</div>
@@ -52,12 +102,30 @@ function BandCard({ title, count, items, gain }) {
 
 export default function PerformanceBands({ data }) {
   const [win, setWin] = useState("1m");
-  if (!data) return null;
-  const set = data[win];
-  if (!set) return null;
 
-  const gainBands = (set.gainers || []).filter((b) => b.count > 0);
-  const lossBands = (set.losers || []).filter((b) => b.count > 0);
+  const view = useMemo(() => {
+    const set = data?.[win];
+    if (!set) return null;
+    const gainers = (set.gainers || []).filter((b) => b.count > 0);
+    const losers = (set.losers || []).filter((b) => b.count > 0);
+    const maxGain = Math.max(1, ...gainers.map((b) => b.count));
+    const maxLoss = Math.max(1, ...losers.map((b) => b.count));
+
+    // diverging bars: deepest loss → … → deepest gain
+    const lossBars = [...(set.losers || [])].reverse().map((b, i, a) => ({
+      side: "down", rgb: DOWN, alpha: 1 - 0.45 * (i / (a.length - 1 || 1)),
+      count: b.count, full: lossLabel(b.hi, b.lo), short: lossShort(b.hi, b.lo),
+    }));
+    const gainBars = (set.gainers || []).map((b, i, a) => ({
+      side: "up", rgb: UP, alpha: 0.55 + 0.45 * (i / (a.length - 1 || 1)),
+      count: b.count, full: gainLabel(b.lo, b.hi), short: gainShort(b.lo, b.hi),
+    }));
+
+    return { set, gainers, losers, maxGain, maxLoss, bars: [...lossBars, ...gainBars] };
+  }, [data, win]);
+
+  if (!view) return null;
+  const { set, gainers, losers, maxGain, maxLoss, bars } = view;
   const winLabel = WINDOWS.find(([k]) => k === win)?.[1] || "";
 
   return (
@@ -73,7 +141,6 @@ export default function PerformanceBands({ data }) {
             grouped into magnitude bands so you can spot momentum leaders and the deepest drawdowns at a glance.
           </p>
         </div>
-        {/* window toggle */}
         <div className="inline-flex rounded-lg border border-line overflow-hidden shrink-0">
           {WINDOWS.map(([k, label]) => (
             <button key={k} onClick={() => setWin(k)}
@@ -85,36 +152,45 @@ export default function PerformanceBands({ data }) {
         </div>
       </div>
 
-      {/* summary breadth row */}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
-        <span><span className="text-up font-mono font-semibold tabular-nums">{set.up}</span> up ≥ +5%</span>
-        <span><span className="text-down font-mono font-semibold tabular-nums">{set.down}</span> down ≥ -5%</span>
+      {/* breadth summary */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-up" />
+          <span className="text-up font-mono font-semibold tabular-nums">{set.up}</span> up ≥ +5%
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-down" />
+          <span className="text-down font-mono font-semibold tabular-nums">{set.down}</span> down ≥ -5%
+        </span>
         <span><span className="text-white font-mono tabular-nums">{set.total}</span> stocks measured · {winLabel}</span>
       </div>
+
+      {/* distribution histogram */}
+      <Distribution bars={bars} />
 
       {/* gainers */}
       <div>
         <div className="text-[11px] uppercase tracking-wide text-up font-semibold mb-2">Gainers</div>
-        {gainBands.length === 0 ? (
+        {gainers.length === 0 ? (
           <div className="text-xs text-muted">No stocks up more than +5% over the {winLabel.toLowerCase()} window.</div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {gainBands.map((b) => (
-              <BandCard key={b.lo} title={gainLabel(b.lo, b.hi)} count={b.count} items={b.items} gain />
+            {gainers.map((b) => (
+              <BandCard key={b.lo} title={gainLabel(b.lo, b.hi)} count={b.count} share={b.count / maxGain} items={b.items} gain />
             ))}
           </div>
         )}
       </div>
 
-      {/* losers */}
+      {/* decliners */}
       <div>
         <div className="text-[11px] uppercase tracking-wide text-down font-semibold mb-2">Decliners</div>
-        {lossBands.length === 0 ? (
+        {losers.length === 0 ? (
           <div className="text-xs text-muted">No stocks down more than -5% over the {winLabel.toLowerCase()} window.</div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {lossBands.map((b) => (
-              <BandCard key={b.hi} title={lossLabel(b.hi, b.lo)} count={b.count} items={b.items} />
+            {losers.map((b) => (
+              <BandCard key={b.hi} title={lossLabel(b.hi, b.lo)} count={b.count} share={b.count / maxLoss} items={b.items} />
             ))}
           </div>
         )}
