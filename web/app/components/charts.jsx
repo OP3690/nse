@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   ComposedChart, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, Cell,
@@ -7,8 +8,46 @@ import {
   PieChart, Pie, Customized,
 } from "recharts";
 
-const AXIS = { stroke: "#8a96ab", fontSize: 11 };
-const GRID = "#243049";
+// ── Theme-aware chart "chrome" (axis/grid/zero-line/cursor/separators) ────────
+// Semantic data colors (greens/reds/blues/ambers) read fine on both themes and
+// stay hardcoded. Only the neutral chrome needs to follow the palette, so we
+// read the live CSS-var triplets and re-render whenever the theme flips (the
+// ThemeToggle dispatches a "themechange" event). SSR / pre-mount falls back to
+// the dark values so the default first paint matches.
+const DARK_CHROME = {
+  axis: "#8a96ab", grid: "#243049", zero: "#3a4a66",
+  cursor: "rgba(255,255,255,0.03)", ink: "#0b0f17", fg: "#dbe2f0", fg2: "#c7d0e0",
+};
+
+function readChrome() {
+  if (typeof document === "undefined") return DARK_CHROME;
+  const cs = getComputedStyle(document.documentElement);
+  const trip = (n) => cs.getPropertyValue(`--${n}`).trim().split(/\s+/).join(", ");
+  const muted = trip("muted"), line = trip("line"), ink = trip("ink"), fg = trip("fg");
+  if (!muted || !line) return DARK_CHROME;
+  const isLight = document.documentElement.classList.contains("light");
+  return {
+    axis: `rgb(${muted})`,
+    grid: `rgb(${line})`,
+    zero: `rgba(${muted}, 0.55)`,
+    // Subtle hover overlay — dark wash on light bg, light wash on dark bg.
+    cursor: isLight ? "rgba(15,23,42,0.05)" : "rgba(255,255,255,0.03)",
+    ink: `rgb(${ink})`,
+    fg: `rgb(${fg})`,
+    fg2: `rgb(${fg})`,
+  };
+}
+
+function useChartTheme() {
+  const [chrome, setChrome] = useState(DARK_CHROME);
+  useEffect(() => {
+    const update = () => setChrome(readChrome());
+    update(); // sync to actual theme after mount
+    window.addEventListener("themechange", update);
+    return () => window.removeEventListener("themechange", update);
+  }, []);
+  return chrome;
+}
 
 function box(label, items) {
   return (
@@ -34,6 +73,9 @@ function LegendSwatch({ color, label }) {
 }
 
 export function FiiDiiChart({ data }) {
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <div>
       <ResponsiveContainer width="100%" height={220}>
@@ -41,9 +83,9 @@ export function FiiDiiChart({ data }) {
           <CartesianGrid stroke={GRID} vertical={false} />
           <XAxis dataKey="date" tick={AXIS} tickFormatter={(d) => d?.slice(5)} />
           <YAxis tick={AXIS} />
-          <ReferenceLine y={0} stroke="#3a4a66" />
+          <ReferenceLine y={0} stroke={t.zero} />
           <Tooltip
-            cursor={{ fill: "#ffffff08" }}
+            cursor={{ fill: t.cursor }}
             content={({ active, payload, label }) =>
               active && payload?.length
                 ? box(label, payload.map((p) => ({
@@ -85,6 +127,9 @@ export function PriceDeliveryChart({ data, trendline }) {
     const byDate = Object.fromEntries(trendline.map((t) => [t.date, t.value]));
     rows = data.map((d) => ({ ...d, trend: byDate[d.date] ?? null }));
   }
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <ResponsiveContainer width="100%" height={260}>
       <ComposedChart data={rows} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
@@ -119,6 +164,9 @@ export function FlowChart({ data, showCum = true }) {
   // Net FII/DII per bucket (bars); cumulative trend lines overlaid when the
   // series share a common span (off for the reconciled chart, where FPI and DII
   // cover different histories and a shared cumulative would mislead).
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <ResponsiveContainer width="100%" height={300}>
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
@@ -128,9 +176,9 @@ export function FlowChart({ data, showCum = true }) {
         {showCum && (
           <YAxis yAxisId="cum" orientation="right" tick={AXIS} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
         )}
-        <ReferenceLine yAxisId="net" y={0} stroke="#3a4a66" />
+        <ReferenceLine yAxisId="net" y={0} stroke={t.zero} />
         <Tooltip
-          cursor={{ fill: "#ffffff08" }}
+          cursor={{ fill: t.cursor }}
           content={({ active, payload, label }) =>
             active && payload?.length
               ? box(label, payload.map((p) => ({ name: p.name, color: p.color, value: inr(p.value) })))
@@ -157,15 +205,18 @@ export function FlowChart({ data, showCum = true }) {
 export function DestinationChart({ data }) {
   // NSDL FPI net by instrument (asset-class destination of foreign money).
   if (!data?.length) return <div className="text-sm text-muted py-8 text-center">No NSDL data yet.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <ResponsiveContainer width="100%" height={Math.max(180, data.length * 46)}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
         <CartesianGrid stroke={GRID} horizontal={false} />
         <XAxis type="number" tick={AXIS} tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`} />
         <YAxis type="category" dataKey="instrument" tick={AXIS} width={110} />
-        <ReferenceLine x={0} stroke="#3a4a66" />
+        <ReferenceLine x={0} stroke={t.zero} />
         <Tooltip
-          cursor={{ fill: "#ffffff08" }}
+          cursor={{ fill: t.cursor }}
           content={({ active, payload, label }) =>
             active && payload?.length
               ? box(label, [{ name: "Net", color: payload[0].payload.net >= 0 ? "#16c784" : "#ea3943", value: inr(payload[0].value) }])
@@ -191,15 +242,18 @@ export function FiiDerivChart({ data }) {
   // FII F&O net (₹ Cr) per category, grouped bars per month. Index/stock
   // futures net is the classic directional gauge; options net adds nuance.
   if (!data?.length) return <div className="text-sm text-muted py-8 text-center">No FII derivatives data yet.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <ResponsiveContainer width="100%" height={300}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="period" tick={AXIS} />
         <YAxis tick={AXIS} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-        <ReferenceLine y={0} stroke="#3a4a66" />
+        <ReferenceLine y={0} stroke={t.zero} />
         <Tooltip
-          cursor={{ fill: "#ffffff08" }}
+          cursor={{ fill: t.cursor }}
           content={({ active, payload, label }) =>
             active && payload?.length
               ? box(label, payload.map((p) => ({ name: p.name, color: p.color, value: inr(p.value) })))
@@ -221,6 +275,9 @@ export function SectorShareChart({ data, keys }) {
   // rising lines = money rotating in, falling = rotating out.
   if (!data?.length || !keys?.length)
     return <div className="text-sm text-muted py-8 text-center">No rotation data yet.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <ResponsiveContainer width="100%" height={320}>
       <LineChart data={data} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
@@ -289,7 +346,7 @@ function RrgTailDot(props) {
 
 // Glowing, gently-pulsing head marker for the RRG (SMIL-animated SVG).
 function RrgHead(props) {
-  const { cx, cy, payload } = props;
+  const { cx, cy, payload, ink = "#0b0f17" } = props;
   if (cx == null || cy == null) return null;
   const c = QUAD_COLOR[payload?.quadrant] || "#8a96ab";
   return (
@@ -298,22 +355,22 @@ function RrgHead(props) {
         <animate attributeName="r" values="8;14;8" dur="2.8s" repeatCount="indefinite" />
         <animate attributeName="fill-opacity" values="0.26;0.05;0.26" dur="2.8s" repeatCount="indefinite" />
       </circle>
-      <circle cx={cx} cy={cy} r={5.5} fill={c} stroke="#0b0f17" strokeWidth={1.6} />
-      <circle cx={cx} cy={cy} r={2} fill="#0b0f17" fillOpacity={0.85} />
+      <circle cx={cx} cy={cy} r={5.5} fill={c} stroke={ink} strokeWidth={1.6} />
+      <circle cx={cx} cy={cy} r={2} fill={ink} fillOpacity={0.85} />
     </g>
   );
 }
 
 // Sector label rendered as a readable pill anchored to the right of each head.
 function RrgLabel(props) {
-  const { x, y, value } = props;
+  const { x, y, value, ink = "#0b0f17", grid = "#243049", fg = "#dbe2f0" } = props;
   if (x == null || y == null || !value) return null;
   const text = value.length > 14 ? value.slice(0, 13) + "…" : value;
   const w = text.length * 5.7 + 14;
   return (
     <g transform={`translate(${x + 10}, ${y - 8})`}>
-      <rect width={w} height={16} rx={8} fill="#0b0f17" fillOpacity={0.78} stroke="#243049" strokeWidth={1} />
-      <text x={w / 2} y={11.5} textAnchor="middle" fill="#dbe2f0" fontSize={9.5} fontWeight={600}>{text}</text>
+      <rect width={w} height={16} rx={8} fill={ink} fillOpacity={0.78} stroke={grid} strokeWidth={1} />
+      <text x={w / 2} y={11.5} textAnchor="middle" fill={fg} fontSize={9.5} fontWeight={600}>{text}</text>
     </g>
   );
 }
@@ -328,6 +385,9 @@ export function RRGChart({ points, tails }) {
   // quadrants are Leading (top-right), Weakening (bottom-right), Improving
   // (top-left), Lagging (bottom-left). Tails show ~6 weeks of travel.
   if (!points?.length) return <div className="text-sm text-muted py-8 text-center">No rotation data yet.</div>;
+  const th = useChartTheme();
+  const AXIS = { stroke: th.axis, fontSize: 11 };
+  const GRID = th.grid;
   const xs = points.flatMap((p) => [p.rs_ratio, ...(tails?.[p.sector] || []).map((t) => t.ratio)]);
   const ys = points.flatMap((p) => [p.rs_momentum, ...(tails?.[p.sector] || []).map((t) => t.mom)]);
   const pad = 3.5;
@@ -352,11 +412,11 @@ export function RRGChart({ points, tails }) {
         <YAxis type="number" dataKey="y" name="RS-Momentum" domain={[ylo, yhi]}
           tick={AXIS} tickFormatter={(v) => v.toFixed(0)} />
         <ZAxis range={[60, 60]} />
-        <ReferenceLine x={100} stroke="#4a5a78" strokeDasharray="4 4" />
-        <ReferenceLine y={100} stroke="#4a5a78" strokeDasharray="4 4" />
-        <ReferenceDot x={100} y={100} r={3.5} fill="#8a96ab" stroke="#0b0f17" strokeWidth={1.5} />
+        <ReferenceLine x={100} stroke={th.zero} strokeDasharray="4 4" />
+        <ReferenceLine y={100} stroke={th.zero} strokeDasharray="4 4" />
+        <ReferenceDot x={100} y={100} r={3.5} fill={th.axis} stroke={th.ink} strokeWidth={1.5} />
         <Tooltip
-          cursor={{ stroke: "#3a4a66", strokeDasharray: "3 3" }}
+          cursor={{ stroke: th.zero, strokeDasharray: "3 3" }}
           content={({ active, payload }) =>
             active && payload?.length && payload[0].payload.sector
               ? box(payload[0].payload.sector, [
@@ -379,8 +439,8 @@ export function RRGChart({ points, tails }) {
               isAnimationActive animationBegin={idx * 60} animationDuration={700} />
           );
         })}
-        <Scatter data={head} shape={<RrgHead />} isAnimationActive animationDuration={900}>
-          <LabelList dataKey="sector" content={<RrgLabel />} />
+        <Scatter data={head} shape={<RrgHead ink={th.ink} />} isAnimationActive animationDuration={900}>
+          <LabelList dataKey="sector" content={<RrgLabel ink={th.ink} grid={th.grid} fg={th.fg} />} />
         </Scatter>
       </ScatterChart>
     </ResponsiveContainer>
@@ -397,12 +457,13 @@ export function QuadrantDonut({ quadrants }) {
     .filter((d) => d.value > 0);
   const total = data.reduce((s, d) => s + d.value, 0);
   if (!total) return <div className="text-sm text-muted py-8 text-center">No rotation data yet.</div>;
+  const t = useChartTheme();
   return (
     <div className="relative">
       <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%"
-            innerRadius={58} outerRadius={92} paddingAngle={3} stroke="#0b0f17" strokeWidth={2}
+            innerRadius={58} outerRadius={92} paddingAngle={3} stroke={t.ink} strokeWidth={2}
             isAnimationActive animationDuration={800}>
             {data.map((d, i) => <Cell key={i} fill={d.color} />)}
           </Pie>
@@ -448,6 +509,8 @@ export function ConvictionBar({ rows }) {
     .map((s, i) => ({ symbol: s.symbol, rank: i + 1, conviction: s.conviction, up_prob: s.up_prob, price_chg: s.price_chg }))
     .reverse(); // recharts vertical layout renders bottom-up
   if (!data.length) return <div className="text-sm text-muted py-8 text-center">No conviction data yet.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
   const grad = (v) => (v >= 80 ? "url(#cvHigh)" : v >= 60 ? "url(#cvMid)" : "url(#cvLow)");
   const col = (v) => (v >= 80 ? "#16c784" : v >= 60 ? "#5b8cff" : "#8a96ab");
   return (
@@ -455,10 +518,10 @@ export function ConvictionBar({ rows }) {
       <BarChart data={data} layout="vertical" barCategoryGap="26%" margin={{ top: 4, right: 40, left: 6, bottom: 0 }}>
         <Customized component={CvDefs} />
         <XAxis type="number" tick={AXIS} domain={[0, 100]} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="symbol" tick={{ ...AXIS, fontWeight: 600, fill: "#c7d0e0" }}
+        <YAxis type="category" dataKey="symbol" tick={{ ...AXIS, fontWeight: 600, fill: t.fg }}
           width={92} axisLine={false} tickLine={false} />
         <Tooltip
-          cursor={{ fill: "#ffffff08" }}
+          cursor={{ fill: t.cursor }}
           content={({ active, payload }) =>
             active && payload?.length
               ? box(`#${payload[0].payload.rank} · ${payload[0].payload.symbol}`, [
@@ -470,10 +533,10 @@ export function ConvictionBar({ rows }) {
           }
         />
         <Bar dataKey="conviction" name="Conviction" radius={[0, 4, 4, 0]} barSize={14}
-          background={{ fill: "#ffffff07", radius: [0, 4, 4, 0] }} isAnimationActive animationDuration={850}>
+          background={{ fill: t.cursor, radius: [0, 4, 4, 0] }} isAnimationActive animationDuration={850}>
           {data.map((d, i) => <Cell key={i} fill={grad(d.conviction)} />)}
           <LabelList dataKey="conviction" position="right" offset={8} formatter={(v) => Math.round(v)}
-            style={{ fill: "#dbe2f0", fontSize: 11, fontWeight: 700 }} />
+            style={{ fill: t.fg, fontSize: 11, fontWeight: 700 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -489,18 +552,19 @@ export function SignalDonut({ data, onSliceClick, activeLabel }) {
   const acc = slices.filter((d) => /Accumulation/i.test(d.label)).reduce((s, d) => s + d.count, 0);
   const dist = slices.filter((d) => /Distribution/i.test(d.label)).reduce((s, d) => s + d.count, 0);
   const netPct = Math.round(((acc - dist) / total) * 100);
+  const t = useChartTheme();
   return (
     <div className="relative">
       <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Pie data={slices} dataKey="count" nameKey="label" cx="50%" cy="50%"
-            innerRadius={58} outerRadius={92} paddingAngle={3} stroke="#0b0f17" strokeWidth={2}
+            innerRadius={58} outerRadius={92} paddingAngle={3} stroke={t.ink} strokeWidth={2}
             onClick={(d) => onSliceClick?.(d?.label)} isAnimationActive animationDuration={800}
             cursor={onSliceClick ? "pointer" : "default"}>
             {slices.map((d, i) => (
               <Cell key={i} fill={d.hex}
                 opacity={activeLabel && activeLabel !== d.label ? 0.35 : 1}
-                stroke={activeLabel === d.label ? "#dbe2f0" : "#0b0f17"} />
+                stroke={activeLabel === d.label ? t.fg : t.ink} />
             ))}
           </Pie>
           <Tooltip
@@ -527,15 +591,18 @@ export function IpiChart({ data }) {
   // cash, DII, and FII index-futures nets. Bars above zero = net institutional
   // demand, below = de-risking.
   if (!data?.length) return <div className="text-sm text-muted py-8 text-center">No regime data yet.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="month" tick={AXIS} tickFormatter={(d) => d?.slice(2)} />
         <YAxis tick={AXIS} domain={[-100, 100]} />
-        <ReferenceLine y={0} stroke="#3a4a66" />
+        <ReferenceLine y={0} stroke={t.zero} />
         <Tooltip
-          cursor={{ fill: "#ffffff08" }}
+          cursor={{ fill: t.cursor }}
           content={({ active, payload, label }) =>
             active && payload?.length && payload[0].value != null
               ? box(label, [
@@ -560,6 +627,9 @@ export function ScoreHistogram({ data, onBarClick, activeBucket }) {
   // Distribution of smart-money scores across the screened universe.
   // Bars are clickable to drill into the stocks in each score band.
   if (!data?.length) return <div className="text-sm text-muted py-8 text-center">No data.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   const clickable = typeof onBarClick === "function";
   return (
     <ResponsiveContainer width="100%" height={210}>
@@ -568,7 +638,7 @@ export function ScoreHistogram({ data, onBarClick, activeBucket }) {
         <XAxis dataKey="bucket" tick={AXIS} interval={0} />
         <YAxis tick={AXIS} allowDecimals={false} />
         <Tooltip
-          cursor={{ fill: "#ffffff08" }}
+          cursor={{ fill: t.cursor }}
           content={({ active, payload, label }) =>
             active && payload?.length
               ? box(`Score ${label}`, [
@@ -585,7 +655,7 @@ export function ScoreHistogram({ data, onBarClick, activeBucket }) {
           {data.map((d, i) => (
             <Cell key={i} fill={d.color}
               opacity={activeBucket && activeBucket !== d.bucket ? 0.4 : 1}
-              stroke={activeBucket === d.bucket ? "#dbe2f0" : "none"} strokeWidth={1.5} />
+              stroke={activeBucket === d.bucket ? t.fg : "none"} strokeWidth={1.5} />
           ))}
         </Bar>
       </BarChart>
@@ -597,6 +667,9 @@ export function BreadthScatter({ data, onPointClick }) {
   // Each stock by day % change (x) vs delivery % (y); bubble size = turnover.
   // Top-right = rising on heavy real delivery (genuine demand). Clickable.
   if (!data?.length) return <div className="text-sm text-muted py-8 text-center">No data.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   const clickable = typeof onPointClick === "function";
   return (
     <ResponsiveContainer width="100%" height={210}>
@@ -610,10 +683,10 @@ export function BreadthScatter({ data, onPointClick }) {
           domain={[-8, 8]} allowDataOverflow tickFormatter={(v) => v.toFixed(0)} />
         <YAxis type="number" dataKey="y" name="Deliv %" tick={AXIS} unit="%" domain={[0, 100]} />
         <ZAxis type="number" dataKey="z" range={[18, 260]} />
-        <ReferenceLine x={0} stroke="#3a4a66" />
-        <ReferenceLine y={50} stroke="#3a4a66" strokeDasharray="3 3" />
+        <ReferenceLine x={0} stroke={t.zero} />
+        <ReferenceLine y={50} stroke={t.zero} strokeDasharray="3 3" />
         <Tooltip
-          cursor={{ stroke: "#3a4a66", strokeDasharray: "3 3" }}
+          cursor={{ stroke: t.zero, strokeDasharray: "3 3" }}
           content={({ active, payload }) =>
             active && payload?.length && payload[0].payload.symbol
               ? box(payload[0].payload.symbol, [
@@ -637,6 +710,9 @@ export function BreadthScatter({ data, onPointClick }) {
 export function MbProbBar({ data }) {
   // Highest KNN multibagger probabilities (horizontal bars).
   if (!data?.length) return <div className="text-sm text-muted py-8 text-center">No probabilities yet.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <ResponsiveContainer width="100%" height={Math.max(180, data.length * 30)}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 30, left: 8, bottom: 0 }}>
@@ -644,7 +720,7 @@ export function MbProbBar({ data }) {
         <XAxis type="number" tick={AXIS} unit="%" domain={[0, "dataMax"]} />
         <YAxis type="category" dataKey="symbol" tick={AXIS} width={78} />
         <Tooltip
-          cursor={{ fill: "#ffffff08" }}
+          cursor={{ fill: t.cursor }}
           content={({ active, payload, label }) =>
             active && payload?.length
               ? box(label, [{ name: "Probability", color: "#c77dff", value: `${Number(payload[0].value).toFixed(1)}%` }])
@@ -653,7 +729,7 @@ export function MbProbBar({ data }) {
         />
         <Bar dataKey="prob" name="Probability" fill="#c77dff" radius={[0, 3, 3, 0]}>
           <LabelList dataKey="prob" position="right" formatter={(v) => `${v.toFixed(0)}%`}
-            style={{ fill: "#c7d0e0", fontSize: 11 }} />
+            style={{ fill: t.fg, fontSize: 11 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -663,6 +739,9 @@ export function MbProbBar({ data }) {
 export function OiChart({ data }) {
   const has = data.some((d) => d.oi != null);
   if (!has) return <div className="text-sm text-muted py-8 text-center">Not in F&O segment.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
   return (
     <ResponsiveContainer width="100%" height={220}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>

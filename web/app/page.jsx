@@ -90,7 +90,7 @@ export default async function Dashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Money Flow Dashboard"
+        title="NSE Money Flow"
         chip="Latest session"
         titleAside={d.headline_indices?.length > 0 ? <IndexTicker items={d.headline_indices} /> : null}
         meta={

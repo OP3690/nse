@@ -2,15 +2,23 @@ import "./globals.css";
 import Link from "next/link";
 import NavBar from "./components/NavBar";
 import SyncButton from "./components/SyncButton";
+import ThemeToggle from "./components/ThemeToggle";
 
 export const metadata = {
   title: "NSE Flow — where the money is moving",
   description: "Daily institutional money-flow analytics from NSE reports: delivery accumulation, FII/DII, OI buildup, bulk & block deals.",
 };
 
+// Runs before first paint to avoid a light/dark flash: applies the saved theme
+// (or the default dark) to <html> synchronously, ahead of React hydration.
+const NO_FLASH = `(function(){try{var t=localStorage.getItem('theme');if(t==='light')document.documentElement.classList.add('light');else if(t!=='dark'){document.documentElement.classList.remove('light');}}catch(e){}})();`;
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
+      </head>
       <body className="min-h-screen font-sans antialiased bg-ink">
         <header className="border-b border-line bg-ink/70 backdrop-blur-xl sticky top-0 z-30">
           <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-4">
@@ -22,6 +30,7 @@ export default function RootLayout({ children }) {
               <NavBar />
             </div>
             <div className="ml-auto flex items-center gap-2 text-xs text-muted">
+              <ThemeToggle />
               <SyncButton />
               <span className="hidden sm:inline-flex chip chip-muted">
                 <span className="w-1.5 h-1.5 rounded-full bg-up mr-1 animate-pulse" />

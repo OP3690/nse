@@ -2,19 +2,73 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
-  background: #0b0f17;
-  color: #e7ecf3;
+/* ============================================================
+   Theme tokens — "R G B" triplets consumed by tailwind.config
+   via rgb(var(--x) / <alpha-value>). Dark is the default; the
+   .light class on <html> swaps the whole palette.
+   ============================================================ */
+:root {
+  --ink: 11 15 23;
+  --panel: 18 24 38;
+  --panel2: 26 34 51;
+  --line: 36 48 73;
+  --up: 22 199 132;
+  --down: 234 57 67;
+  --accent: 91 140 255;
+  --muted: 138 150 171;
+  --fg: 231 236 243;
+  --card-grad: 14 20 33;
+  --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px -16px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 16px 48px -16px rgba(0, 0, 0, 0.7);
+  color-scheme: dark;
 }
 
+html.light {
+  --ink: 244 247 251;
+  --panel: 255 255 255;
+  --panel2: 237 242 248;
+  --line: 214 222 232;
+  --up: 8 150 92;
+  --down: 211 38 50;
+  --accent: 43 101 235;
+  --muted: 100 116 139;
+  --fg: 17 24 39;
+  --card-grad: 248 250 253;
+  --shadow-card: 0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 10px 28px -18px rgba(15, 23, 42, 0.22);
+  --shadow-pop: 0 16px 48px -16px rgba(15, 23, 42, 0.24);
+  color-scheme: light;
+}
+
+html, body {
+  background: rgb(var(--ink));
+  color: rgb(var(--fg));
+}
+
+/* Smooth, contained transition when flipping themes (chrome only — not hovers). */
+body, header, .card, .panel-elev, .stat-tile, .mini-card, .chip, .td, input, select, button {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease, box-shadow 0.25s ease;
+}
+
+::selection { background: rgb(var(--accent) / 0.28); }
+
 ::-webkit-scrollbar { height: 10px; width: 10px; }
-::-webkit-scrollbar-thumb { background: #243049; border-radius: 6px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--line)); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--muted) / 0.6); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Visible, consistent keyboard focus across the app. */
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
+input:focus-visible, select:focus-visible {
+  outline: 2px solid rgb(var(--accent) / 0.7);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
 
 @layer components {
   .card {
-    @apply bg-gradient-to-b from-panel to-[#0e1421] border border-line rounded-2xl p-4;
-    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.03) inset, 0 8px 30px -14px rgba(0, 0, 0, 0.55);
+    @apply border border-line rounded-2xl p-4;
+    background-image: linear-gradient(to bottom, rgb(var(--panel)), rgb(var(--card-grad)));
+    box-shadow: var(--shadow-card);
   }
   .card-title {
     @apply text-sm font-semibold text-muted uppercase tracking-wide mb-3;
@@ -23,21 +77,21 @@ html, body {
     @apply inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium;
   }
   .th {
-    @apply text-left text-xs font-semibold text-muted uppercase tracking-wide px-3 py-2 whitespace-nowrap;
+    @apply text-left text-[11px] font-semibold text-muted uppercase tracking-wide px-3 py-2.5 whitespace-nowrap;
   }
   .td {
-    @apply px-3 py-2 text-sm whitespace-nowrap border-t border-line/60;
+    @apply px-3 py-2.5 text-sm whitespace-nowrap border-t border-line/60;
   }
 
-  /* ---- intelligence page polish ---- */
   .panel-elev {
-    @apply bg-gradient-to-b from-panel to-[#0e1421] border border-line rounded-2xl;
-    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.03) inset, 0 8px 30px -12px rgba(0, 0, 0, 0.6);
+    @apply border border-line rounded-2xl;
+    background-image: linear-gradient(to bottom, rgb(var(--panel)), rgb(var(--card-grad)));
+    box-shadow: var(--shadow-card);
   }
   .stat-tile {
-    @apply relative overflow-hidden rounded-xl border border-line bg-gradient-to-b from-panel2 to-panel p-4 flex flex-col gap-1 transition-colors;
+    @apply relative overflow-hidden rounded-xl border border-line bg-gradient-to-b from-panel2 to-panel p-4 flex flex-col gap-1;
   }
-  .stat-tile:hover { @apply border-line/90; }
+  .stat-tile:hover { @apply border-accent/40; box-shadow: var(--shadow-card); }
   .stat-label {
     @apply text-[11px] uppercase tracking-wider text-muted font-semibold;
   }
@@ -56,7 +110,7 @@ html, body {
   .chip-up { @apply bg-up/15 text-up; }
   .chip-down { @apply bg-down/15 text-down; }
   .chip-accent { @apply bg-accent/15 text-accent; }
-  .chip-amber { @apply bg-amber-400/15 text-amber-400; }
+  .chip-amber { @apply bg-amber-400/15 text-amber-500; }
   .chip-muted { @apply bg-muted/15 text-muted; }
   .q-card { @apply rounded-xl border p-3 transition-colors; }
   .q-leading { @apply border-up/30 bg-up/5 hover:bg-up/10; }
@@ -68,7 +122,7 @@ html, body {
     @apply inline-flex items-center gap-1 text-sm text-muted hover:text-accent transition;
   }
   .mini-card {
-    @apply rounded-xl border border-line bg-panel2/60 p-3 transition-colors hover:border-line/90;
+    @apply rounded-xl border border-line bg-panel2/60 p-3 transition-colors hover:border-accent/40;
   }
 }
 
@@ -76,7 +130,7 @@ html, body {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-rise { animation: intel-rise 0.4s ease-out both; }
+.animate-rise { animation: intel-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 @keyframes rrg-spin { to { transform: rotate(360deg); } }
 .rrg-spin { display: inline-block; animation: rrg-spin 6s linear infinite; }
