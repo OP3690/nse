@@ -1,0 +1,592 @@
+"""Compute money-flow signals from the SQLite store and emit JSON for the web app.
+
+The scoring is intentionally transparent (no black-box ML): each component is a
+real, explainable market signal, combined into a 0-100 "smart-money score".
+Components auto-renormalize when history or F&O data is missing.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import re
+from pathlib import Path
+
+import flows
+import forecast
+import indices_membership
+import intel
+import ipo
+import knn
+import model
+import movers
+import mongo
+import sectors
+import store
+
+# ETFs, gold/silver funds, G-Secs and index trackers trade on series EQ but
+# aren't "stocks" — exclude them from headline lists (kept in the full screener).
+_NON_STOCK = re.compile(
+    r"(ETF|BEES|GOLD|SILVER|LIQUID|GSEC|NIFTY|SENSEX|MON100|MOM\d|MAFANG|CASE$|^SDL|^GS\d)",
+    re.I)
+
+
+def _is_stock(sym: str) -> bool:
+    return not _NON_STOCK.search(sym or "")
+
+ROOT = Path(__file__).resolve().parent
+WEB_DATA = ROOT.parent / "web" / "data"
+PROCESSED = ROOT / "data" / "processed"
+
+MIN_TURNOVER_LACS = 500.0  # ignore illiquid names (< ~5 cr turnover)
+ROLLING_DAYS = 20
+
+
+def _clamp(x, lo=0.0, hi=100.0):
+    return max(lo, min(hi, x))
+
+
+def _avg(xs):
+    xs = [x for x in xs if x is not None]
+    return sum(xs) / len(xs) if xs else None
+
+
+def latest_date(con) -> str | None:
+    row = con.execute("SELECT MAX(date) d FROM delivery_daily").fetchone()
+    return row["d"] if row else None
+
+
+def available_dates(con) -> list[str]:
+    return [r["date"] for r in con.execute(
+        "SELECT DISTINCT date FROM delivery_daily ORDER BY date")]
+
+
+def rolling_baselines(con, date: str) -> dict[str, dict]:
+    """Per-symbol average volume & delivery qty over the prior ROLLING_DAYS."""
+    rows = con.execute(
+        """SELECT symbol, AVG(volume) av, AVG(deliv_qty) ad, COUNT(*) n
+           FROM delivery_daily
+           WHERE date < ? AND date >= ?
+           GROUP BY symbol""",
+        (date, _lookback_start(con, date))).fetchall()
+    return {r["symbol"]: {"av": r["av"], "ad": r["ad"], "n": r["n"]} for r in rows}
+
+
+def _lookback_start(con, date):
+    dates = [r["date"] for r in con.execute(
+        "SELECT DISTINCT date FROM delivery_daily WHERE date < ? ORDER BY date DESC LIMIT ?",
+        (date, ROLLING_DAYS))]
+    return dates[-1] if dates else date
+
+
+def load_histories(con, symbols: set) -> dict[str, list]:
+    """Per-symbol time series (oldest->newest) with OI merged in. Shared by the
+    forecast engine and the stock-detail file emitter."""
+    hist: dict[str, list] = {}
+    for r in con.execute(
+        """SELECT date, symbol, close, pct_change, deliv_pct, volume, turnover_lacs
+           FROM delivery_daily ORDER BY symbol, date"""):
+        if r["symbol"] not in symbols:
+            continue
+        hist.setdefault(r["symbol"], []).append({
+            "date": r["date"], "close": r["close"], "pct": r["pct_change"],
+            "deliv": r["deliv_pct"], "volume": r["volume"],
+            "turnover_cr": round((r["turnover_lacs"] or 0) / 100, 2)})
+    for r in con.execute(
+        """SELECT date, symbol, SUM(oi) oi, SUM(oi_change) oic
+           FROM fo_oi_daily GROUP BY date, symbol"""):
+        if r["symbol"] not in hist:
+            continue
+        for row in hist[r["symbol"]]:
+            if row["date"] == r["date"]:
+                row["oi"] = r["oi"]
+                row["oi_change"] = r["oic"]
+                break
+    return hist
+
+
+def load_wk52(con) -> dict[str, dict]:
+    return {r["symbol"]: {"high": r["wk_high"], "low": r["wk_low"]}
+            for r in con.execute("SELECT symbol, wk_high, wk_low FROM wk52")}
+
+
+def load_names(con) -> dict[str, str]:
+    """Symbol -> company name. Equity master is the primary source; IPO issues
+    and bulk/block deal security names backfill anything the master misses."""
+    names: dict[str, str] = {}
+    for sql in (
+        "SELECT symbol, company FROM ipo_issues WHERE company IS NOT NULL",
+        "SELECT symbol, security AS company FROM bulk_deals WHERE security IS NOT NULL",
+        "SELECT symbol, security AS company FROM block_deals WHERE security IS NOT NULL",
+        "SELECT symbol, company FROM securities WHERE company IS NOT NULL",
+    ):
+        try:
+            for r in con.execute(sql):
+                if r["company"]:
+                    names[r["symbol"]] = r["company"]  # later sources win (master last)
+        except Exception:  # noqa: BLE001 — table may not exist on old DBs
+            pass
+    return names
+
+
+def load_indices(con) -> list[dict]:
+    row = con.execute('SELECT MAX(date) d FROM indices_daily').fetchone()
+    if not row or not row["d"]:
+        return []
+    return [dict(r) for r in con.execute(
+        'SELECT * FROM indices_daily WHERE date = ?', (row["d"],))]
+
+
+def fo_signals(con, date: str) -> dict[str, dict]:
+    """Aggregate futures OI per underlying and classify the buildup."""
+    rows = con.execute(
+        """SELECT symbol, expiry, close, prev_close, oi, oi_change
+           FROM fo_oi_daily WHERE date = ?""", (date,)).fetchall()
+    by_sym: dict[str, dict] = {}
+    near: dict[str, str] = {}  # nearest expiry per symbol
+    for r in rows:
+        s = r["symbol"]
+        d = by_sym.setdefault(s, {"oi": 0, "oi_change": 0, "near_pct": None})
+        if r["oi"]:
+            d["oi"] += r["oi"]
+        if r["oi_change"]:
+            d["oi_change"] += r["oi_change"]
+        # Use the nearest expiry contract for the price-direction read.
+        if r["expiry"] and (s not in near or r["expiry"] < near[s]):
+            near[s] = r["expiry"]
+            if r["prev_close"] and r["close"]:
+                d["near_pct"] = (r["close"] - r["prev_close"]) / r["prev_close"] * 100
+
+    out = {}
+    for s, d in by_sym.items():
+        pct = d["near_pct"]
+        oic = d["oi_change"]
+        if pct is None or oic == 0:
+            label, score = "neutral", 50
+        else:
+            up = pct > 0
+            oi_up = oic > 0
+            if up and oi_up:
+                label, score = "long_buildup", 100
+            elif not up and oi_up:
+                label, score = "short_buildup", 0
+            elif up and not oi_up:
+                label, score = "short_covering", 70
+            else:
+                label, score = "long_unwinding", 30
+        out[s] = {"oi": d["oi"], "oi_change": oic, "label": label, "score": score}
+    return out
+
+
+def deal_net(con, date: str, table: str, sessions: int = 5) -> dict[str, dict]:
+    """Net institutional buying per symbol over the last N sessions of deals."""
+    recent = [r["date"] for r in con.execute(
+        f"SELECT DISTINCT date FROM {table} WHERE date <= ? ORDER BY date DESC LIMIT ?",
+        (date, sessions))]
+    if not recent:
+        return {}
+    qmarks = ",".join("?" * len(recent))
+    rows = con.execute(
+        f"""SELECT symbol, side, qty, price, client, date FROM {table}
+            WHERE date IN ({qmarks})""", recent).fetchall()
+    agg: dict[str, dict] = {}
+    for r in rows:
+        if not r["qty"] or not r["price"]:
+            continue
+        val = r["qty"] * r["price"]
+        d = agg.setdefault(r["symbol"], {"net": 0.0, "buys": [], "sells": []})
+        if r["side"] == "BUY":
+            d["net"] += val
+            d["buys"].append({"client": r["client"], "value": val, "date": r["date"]})
+        elif r["side"] == "SELL":
+            d["net"] -= val
+            d["sells"].append({"client": r["client"], "value": val, "date": r["date"]})
+    return agg
+
+
+def fiidii_history(con) -> list[dict]:
+    rows = con.execute(
+        "SELECT date, category, net FROM fiidii_daily ORDER BY date").fetchall()
+    by_date: dict[str, dict] = {}
+    for r in rows:
+        d = by_date.setdefault(r["date"], {"date": r["date"], "fii": None, "dii": None})
+        cat = (r["category"] or "").upper()
+        if "FII" in cat or "FPI" in cat:
+            d["fii"] = r["net"]
+        elif "DII" in cat:
+            d["dii"] = r["net"]
+    return list(by_date.values())
+
+
+def _vol_spark(series, n=12):
+    """Last n volumes scaled to 0..100 (by window max) for a compact sparkline."""
+    vols = [h.get("volume") for h in (series or []) if h.get("volume")]
+    vols = vols[-n:]
+    if len(vols) < 2:
+        return None
+    mx = max(vols) or 1
+    return [round(v / mx * 100) for v in vols]
+
+
+def build_tooltips(headline, histories) -> dict:
+    """Compact per-symbol meta for the rich hover-card. One shared map keyed by
+    symbol, so symbol links anywhere in the app can show price/52W/indices/volume
+    without duplicating the fields into every list payload."""
+    out = {}
+    for e in headline:
+        sym = e["symbol"]
+        out[sym] = {
+            "symbol": sym,
+            "company": e.get("company"),
+            "sector": e.get("sector"),
+            "close": e.get("close"),
+            "pct_change": e.get("pct_change"),
+            "cap_tier": e.get("cap_tier"),
+            "indices": e.get("indices") or [],
+            "wk_high": e.get("wk_high"),
+            "wk_low": e.get("wk_low"),
+            "wk52_pos": e.get("wk52_pos"),
+            "deliv_pct": e.get("deliv_pct"),
+            "vol_surge": e.get("vol_surge"),
+            "turnover_cr": e.get("turnover_cr"),
+            "score": e.get("score"),
+            "signal": e.get("signal"),
+            "vol_spark": _vol_spark(histories.get(sym)),
+        }
+    return out
+
+
+def _signal_label(score, pct):
+    if score >= 75:
+        return "Strong Accumulation"
+    if score >= 60:
+        return "Accumulation"
+    if score <= 30 and (pct or 0) < 0:
+        return "Distribution"
+    return "Neutral"
+
+
+def build(con) -> dict:
+    date = latest_date(con)
+    if not date:
+        raise RuntimeError("No delivery data in DB. Run download + ingest first.")
+
+    sec_map = sectors.load_map()
+    names = load_names(con)
+    membership = indices_membership.load_maps(con)
+    mem_by_sym = membership["per_symbol"]
+    baselines = rolling_baselines(con, date)
+    fo = fo_signals(con, date)
+    bulk = deal_net(con, date, "bulk_deals")
+    block = deal_net(con, date, "block_deals")
+
+    rows = con.execute(
+        """SELECT symbol, close, prev_close, pct_change, volume, turnover_lacs,
+                  deliv_qty, deliv_pct, series
+           FROM delivery_daily WHERE date = ? AND series IN ('EQ','BE')""",
+        (date,)).fetchall()
+
+    screener = []
+    adv = dec = unch = 0
+    total_turnover_lacs = 0.0
+    sector_agg: dict[str, dict] = {}
+
+    for r in rows:
+        sym = r["symbol"]
+        pct = r["pct_change"]
+        turn = r["turnover_lacs"] or 0
+        total_turnover_lacs += turn
+        if pct is not None:
+            if pct > 0.05:
+                adv += 1
+            elif pct < -0.05:
+                dec += 1
+            else:
+                unch += 1
+
+        base = baselines.get(sym, {})
+        avg_vol, avg_del = base.get("av"), base.get("ad")
+        vol_surge = (r["volume"] / avg_vol) if (avg_vol and r["volume"]) else None
+        del_surge = (r["deliv_qty"] / avg_del) if (avg_del and r["deliv_qty"]) else None
+
+        # --- scoring components (each 0-100) with weights ---
+        comps, weights = {}, {}
+        if r["deliv_pct"] is not None:
+            comps["delivery"] = _clamp(r["deliv_pct"]); weights["delivery"] = 0.30
+        if del_surge is not None:
+            comps["deliv_surge"] = _clamp((del_surge - 1) * 100); weights["deliv_surge"] = 0.20
+        if vol_surge is not None:
+            comps["vol_surge"] = _clamp((vol_surge - 1) * 100); weights["vol_surge"] = 0.15
+        if pct is not None:
+            comps["momentum"] = _clamp(50 + pct * 8); weights["momentum"] = 0.15
+        if sym in fo:
+            comps["oi"] = fo[sym]["score"]; weights["oi"] = 0.10
+        inst_net = bulk.get(sym, {}).get("net", 0) + block.get(sym, {}).get("net", 0)
+        if inst_net:
+            comps["institutional"] = 100 if inst_net > 0 else 0
+            weights["institutional"] = 0.10
+
+        if weights:
+            wsum = sum(weights.values())
+            score = sum(comps[k] * weights[k] for k in comps) / wsum
+        else:
+            score = 0.0
+        score = round(score, 1)
+
+        liquid = turn >= MIN_TURNOVER_LACS
+        mem = mem_by_sym.get(sym, {})
+        entry = {
+            "symbol": sym,
+            "company": names.get(sym),
+            "sector": sec_map.get(sym),
+            "close": r["close"],
+            "pct_change": pct,
+            "deliv_pct": r["deliv_pct"],
+            "volume": r["volume"],
+            "turnover_cr": round(turn / 100, 2),
+            "vol_surge": round(vol_surge, 2) if vol_surge else None,
+            "deliv_surge": round(del_surge, 2) if del_surge else None,
+            "oi_label": fo.get(sym, {}).get("label"),
+            "oi_change": fo.get(sym, {}).get("oi_change"),
+            "inst_net_cr": round(inst_net / 1e7, 2) if inst_net else None,
+            "score": score,
+            "signal": _signal_label(score, pct),
+            "liquid": liquid,
+            # --- index membership + size class (for the rich hover-card) ---
+            "cap_tier": mem.get("cap_tier"),
+            "indices": mem.get("indices") or [],
+        }
+        screener.append(entry)
+
+        # sector aggregation (turnover-weighted)
+        sec = sec_map.get(sym)
+        if sec and pct is not None:
+            sa = sector_agg.setdefault(sec, {
+                "sector": sec, "turnover_cr": 0.0, "w_pct": 0.0,
+                "deliv": [], "adv": 0, "dec": 0, "count": 0})
+            sa["turnover_cr"] += turn / 100
+            sa["w_pct"] += (pct * turn)
+            if r["deliv_pct"] is not None:
+                sa["deliv"].append(r["deliv_pct"])
+            sa["adv" if pct > 0 else "dec"] += 1
+            sa["count"] += 1
+
+    # finalize sectors
+    sectors_out = []
+    for sa in sector_agg.values():
+        tw = sa["turnover_cr"] * 100 or 1
+        sectors_out.append({
+            "sector": sa["sector"],
+            "turnover_cr": round(sa["turnover_cr"], 1),
+            "avg_pct": round(sa["w_pct"] / tw, 2),
+            "avg_deliv": round(_avg(sa["deliv"]) or 0, 1),
+            "advances": sa["adv"], "declines": sa["dec"], "count": sa["count"],
+        })
+    sectors_out.sort(key=lambda s: s["avg_pct"], reverse=True)
+
+    liquid_screener = [e for e in screener if e["liquid"]]
+    liquid_screener.sort(key=lambda e: e["score"], reverse=True)
+    # Headline lists exclude ETFs/G-Secs/index trackers.
+    headline = [e for e in liquid_screener if _is_stock(e["symbol"])]
+
+    # OI buildup buckets (liquid, in F&O)
+    buckets = {"long_buildup": [], "short_buildup": [],
+               "short_covering": [], "long_unwinding": []}
+    for e in headline:
+        lbl = e["oi_label"]
+        if lbl in buckets:
+            buckets[lbl].append({
+                "symbol": e["symbol"], "company": e.get("company"),
+                "pct_change": e["pct_change"],
+                "oi_change": e["oi_change"], "close": e["close"],
+                "sector": e["sector"]})
+    for k in buckets:
+        buckets[k] = buckets[k][:20]
+
+    # notable institutional buys (named clients, last 5 sessions)
+    notable = []
+    for sym, d in {**{k: v for k, v in bulk.items()}}.items():
+        for b in d["buys"]:
+            notable.append({**b, "symbol": sym, "kind": "bulk"})
+    for sym, d in block.items():
+        for b in d["buys"]:
+            notable.append({**b, "symbol": sym, "kind": "block"})
+    notable.sort(key=lambda x: x["value"], reverse=True)
+    notable = notable[:25]
+    for n in notable:
+        n["value_cr"] = round(n.pop("value") / 1e7, 2)
+        n["company"] = names.get(n["symbol"])
+
+    # --- trend forecast (3-month technical + flow trendlines) ---
+    histories = load_histories(con, {e["symbol"] for e in headline})
+    wk = load_wk52(con)
+    idx_rows = load_indices(con)
+    forecasts: dict[str, dict] = {}
+    for e in headline:
+        sym = e["symbol"]
+        f = forecast.forecast_symbol(
+            histories.get(sym, []), wk.get(sym, {}).get("high"), wk.get(sym, {}).get("low"))
+        if not f:
+            continue
+        forecasts[sym] = f
+        # merge compact summary into the screener/headline entry
+        for k in ("trend_score", "trend_label", "confidence", "rsi",
+                  "sma20", "sma50", "slope20_pct", "trend_r2", "wk52_pos"):
+            e[k] = f[k]
+        # actual 52-week high/low levels (for display alongside the position)
+        e["wk_high"] = wk.get(sym, {}).get("high")
+        e["wk_low"] = wk.get(sym, {}).get("low")
+
+    rated = [e for e in headline if "trend_score" in e]
+    uptrends = sorted(
+        [e for e in rated if e["trend_label"] in ("Uptrend", "Strong Uptrend")],
+        key=lambda e: (e["trend_score"], e["confidence"]), reverse=True)
+    downtrends = sorted(
+        [e for e in rated if e["trend_label"] in ("Downtrend", "Strong Downtrend")],
+        key=lambda e: (e["trend_score"], -e["confidence"]))
+    regime = forecast.market_regime(idx_rows) if idx_rows else None
+    index_sectors = forecast.sector_trends(idx_rows) if idx_rows else []
+
+    # --- advanced cross-sectional model (relative ranking + probabilities) ---
+    feats = {}
+    for e in headline:
+        s = e["symbol"]
+        feats[s] = model.extract_features(
+            histories.get(s, []), wk.get(s, {}).get("high"), wk.get(s, {}).get("low"))
+    feats = {s: f for s, f in feats.items() if f}
+    mscores = model.score_universe(feats)
+    MODEL_KEYS = ("composite", "factor_momentum", "factor_trend", "factor_flow",
+                  "up_prob_5d", "up_prob_20d", "vol_20", "mdd_60")
+    for e in headline:
+        ms = mscores.get(e["symbol"])
+        if ms:
+            for k in MODEL_KEYS:
+                e[k] = ms[k]
+    model_picks = sorted([e for e in headline if "composite" in e],
+                         key=lambda e: e["composite"], reverse=True)
+    model_pans = sorted([e for e in headline if "composite" in e],
+                        key=lambda e: e["composite"])
+    backtest = model.backtest(histories, wk, horizon=20, step=10)
+
+    # --- KNN multibagger finder (analog model: >10% move within ~1 month) ---
+    multibaggers = knn.build_multibaggers(
+        histories, wk, feats, {e["symbol"]: e for e in headline})
+    if multibaggers.get("ok"):
+        mb_probs = multibaggers.get("probs", {})
+        for e in headline:
+            p = mb_probs.get(e["symbol"])
+            if p is not None:
+                e["mb_prob"] = p
+
+    fh = fiidii_history(con)
+    fii_latest = next((x for x in reversed(fh)), None)
+
+    # --- multi-timeframe FII/DII flows + asset-class / sector destination ---
+    flow_data = flows.build_flows(con, date, sec_map)
+
+    # --- 3-6 month intelligence (accumulation, rotation, regime, divergence) ---
+    intel_data = intel.build_intel(con, date, sec_map, names)
+
+    # --- IPO Radar: recently listed stocks scored on post-listing behaviour ---
+    ipo_data = ipo.build_ipo_payload(
+        con, date, sec_map, {e["symbol"]: e for e in screener})
+
+    # --- market movers (gainers/losers, streaks, 1y) + market-pulse board ---
+    market_dict = {
+        "advances": adv, "declines": dec, "unchanged": unch,
+        "total_turnover_cr": round(total_turnover_lacs / 100, 1),
+        "stocks": len(screener),
+    }
+    movers_data = movers.build_movers(con, headline)
+    pulse_data = movers.build_pulse(
+        con, date, headline, screener, sectors_out, idx_rows, market_dict, names,
+        by_symbol={e["symbol"]: e for e in screener},
+        index_members=membership["index_members"])
+
+    # Compact per-symbol meta for the rich hover-card (shared lookup map).
+    tooltips = build_tooltips(headline, histories)
+
+    data = {
+        "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "date": date,
+        "dates": available_dates(con),
+        "market": {
+            "advances": adv, "declines": dec, "unchanged": unch,
+            "total_turnover_cr": round(total_turnover_lacs / 100, 1),
+            "stocks": len(screener),
+        },
+        "regime": regime,
+        "index_sectors": index_sectors,
+        "fiidii": {"latest": fii_latest, "history": fh},
+        "flows": flow_data,
+        "intel": intel_data,
+        "ipo": ipo_data,
+        "movers": movers_data,
+        "pulse": pulse_data,
+        "tooltips": tooltips,
+        "sectors": sectors_out,
+        "top_accumulation": headline[:40],
+        "oi_buildup": buckets,
+        "notable_deals": notable,
+        "forecast": {
+            "uptrends": uptrends[:40],
+            "downtrends": downtrends[:40],
+            "rated": len(rated),
+        },
+        "model": {
+            "universe": len(mscores),
+            "weights": {"momentum": model.W_MOM, "trend": model.W_TREND, "flow": model.W_FLOW},
+            "backtest": backtest,
+            "top_picks": model_picks[:40],
+            "top_pans": model_pans[:40],
+        },
+        "multibaggers": multibaggers,
+        "screener": headline,
+    }
+    # carried for emit_histories, popped before serialization
+    data["_histories"] = histories
+    data["_forecasts"] = forecasts
+    return data
+
+
+def emit_histories(con, screener, histories, forecasts):
+    """Per-symbol time series for the stock detail pages (one small file each).
+
+    Reuses the histories already loaded by build() (with OI merged) and embeds
+    each symbol's forecast — trendline + indicators — so the detail chart can
+    overlay the regression line and surface the directional read."""
+    out_dir = WEB_DATA / "stocks"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    meta = {e["symbol"]: e for e in screener}
+    docs = []
+    for sym in meta:
+        series = histories.get(sym)
+        if not series:
+            continue
+        f = forecasts.get(sym)
+        doc = {"symbol": sym, "meta": meta.get(sym), "history": series,
+               "forecast": f, "trendline": f.get("trendline") if f else None}
+        docs.append(doc)
+        (out_dir / f"{sym}.json").write_text(json.dumps(doc, separators=(",", ":")))
+    return docs
+
+
+def run():
+    con = store.connect()
+    data = build(con)
+    histories = data.pop("_histories")
+    forecasts = data.pop("_forecasts")
+    stock_docs = emit_histories(con, data["screener"], histories, forecasts)
+    con.close()
+    WEB_DATA.mkdir(parents=True, exist_ok=True)
+    PROCESSED.mkdir(parents=True, exist_ok=True)
+    (WEB_DATA / "latest.json").write_text(json.dumps(data, separators=(",", ":")))
+    (PROCESSED / f"{data['date']}.json").write_text(json.dumps(data, separators=(",", ":")))
+    mongo.push(data, stock_docs)  # cloud sync; no-op if MONGODB_URI unset
+    print(f"Analyzed {data['date']}: {data['market']['stocks']} stocks, "
+          f"{len(data['sectors'])} sectors, "
+          f"top score {data['top_accumulation'][0]['score'] if data['top_accumulation'] else 'n/a'}")
+    return data
+
+
+if __name__ == "__main__":
+    run()

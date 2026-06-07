@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS launchd job: runs the NSE Flow pipeline every weekday evening.
+  Install:
+    cp scripts/com.nseflow.daily.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.nseflow.daily.plist
+  Adjust the Hour/Minute to ~30 min after NSE publishes EOD files in YOUR timezone.
+  (If your Mac is in IST, 19:30 is a safe time.)
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.nseflow.daily.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nseflow.daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/omprakashutaha/Desktop/nse-flow/scripts/run.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>/Users/omprakashutaha/Desktop/nse-flow/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/omprakashutaha/Desktop/nse-flow/logs/launchd.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
