@@ -4,6 +4,7 @@ import ScreenerTable from "../components/ScreenerTable";
 import ScreenerInsights from "../components/ScreenerInsights";
 import MultibaggerSpotlight from "../components/MultibaggerSpotlight";
 import PerformanceBands from "../components/PerformanceBands";
+import FromHighBands from "../components/FromHighBands";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function ScreenerPage() {
       </PageHeader>
       <MultibaggerSpotlight multibaggers={d.multibaggers} />
       <PerformanceBands data={d.return_bands} />
+      <FromHighBands rows={d.screener} />
       <ScreenerInsights rows={d.screener} multibaggers={d.multibaggers} />
       <ScreenerTable rows={d.screener} sectors={sectors} />
     </div>
