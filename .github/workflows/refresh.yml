@@ -48,6 +48,14 @@ jobs:
       - name: Install dependencies
         run: pip install --quiet -r pipeline/requirements.txt
 
+      # Merge committed history that 3rd-party feeds can't re-serve (cash FII/DII,
+      # FPI/derivative flow series). Idempotent INSERT OR IGNORE: fills only the
+      # dates a cold/thin cloud DB is missing, so the dashboard's FII/DII chart
+      # and flow history survive every run instead of collapsing to 1 point.
+      - name: Load seed history
+        working-directory: pipeline
+        run: python seed_io.py load
+
       # First-time seed only: `workflow_dispatch` with a backfill day count, or an
       # empty cache. Builds the history the signals + KNN model need.
       - name: Seed history (optional)

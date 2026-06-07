@@ -23,6 +23,7 @@ import sys
 
 import analyze
 import sectors
+import seed_io
 from download import (RAW, download_for_date, download_latest, is_weekend,
                       latest_trading_date)
 from ingest import ingest_dir
@@ -67,6 +68,13 @@ def fast_refresh(lookback: int = LOOKBACK) -> int:
         m = download_for_date(d, light=True)
         if m:
             ingest_dir(RAW / m["iso"])
+
+    # 2b) Merge the committed seed history (cash FII/DII + flow series) into the
+    #     DB. On a cold/thin cloud DB this restores the months of history the
+    #     3rd-party feeds can't re-serve; locally it's a no-op (rows already
+    #     present). Without it, analyze would emit a 1-point FII/DII history and
+    #     mongo.push would overwrite the good cloud doc with that thin payload.
+    seed_io.load()
 
     # 3) Recompute all signals (incl. KNN Multibagger Radar) + emit JSON + Mongo sync.
     analyze.run()
