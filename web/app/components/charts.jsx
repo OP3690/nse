@@ -24,33 +24,56 @@ function box(label, items) {
   );
 }
 
+function LegendSwatch({ color, label }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
+      <span className="text-muted">{label}</span>
+    </span>
+  );
+}
+
 export function FiiDiiChart({ data }) {
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-        <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="date" tick={AXIS} tickFormatter={(d) => d?.slice(5)} />
-        <YAxis tick={AXIS} />
-        <ReferenceLine y={0} stroke="#3a4a66" />
-        <Tooltip
-          cursor={{ fill: "#ffffff08" }}
-          content={({ active, payload, label }) =>
-            active && payload?.length
-              ? box(label, payload.map((p) => ({
-                  name: p.name, color: p.color,
-                  value: `₹${Number(p.value).toLocaleString("en-IN")} Cr`,
-                })))
-              : null
-          }
-        />
-        <Bar dataKey="fii" name="FII" radius={[2, 2, 0, 0]}>
-          {data.map((d, i) => <Cell key={i} fill={d.fii >= 0 ? "#16c784" : "#ea3943"} />)}
-        </Bar>
-        <Bar dataKey="dii" name="DII" radius={[2, 2, 0, 0]}>
-          {data.map((d, i) => <Cell key={i} fill={d.dii >= 0 ? "#5b8cff" : "#f0a020"} />)}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
+    <div>
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={data} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis dataKey="date" tick={AXIS} tickFormatter={(d) => d?.slice(5)} />
+          <YAxis tick={AXIS} />
+          <ReferenceLine y={0} stroke="#3a4a66" />
+          <Tooltip
+            cursor={{ fill: "#ffffff08" }}
+            content={({ active, payload, label }) =>
+              active && payload?.length
+                ? box(label, payload.map((p) => ({
+                    name: p.name === "fii" ? "FII" : p.name === "dii" ? "DII" : p.name,
+                    color: p.value >= 0
+                      ? (p.dataKey === "fii" ? "#16c784" : "#5b8cff")
+                      : (p.dataKey === "fii" ? "#ea3943" : "#f0a020"),
+                    value: `${p.value >= 0 ? "+" : ""}₹${Number(p.value).toLocaleString("en-IN")} Cr ${p.value >= 0 ? "(net buy)" : "(net sell)"}`,
+                  })))
+                : null
+            }
+          />
+          <Bar dataKey="fii" name="FII" radius={[2, 2, 0, 0]}>
+            {data.map((d, i) => <Cell key={i} fill={d.fii >= 0 ? "#16c784" : "#ea3943"} />)}
+          </Bar>
+          <Bar dataKey="dii" name="DII" radius={[2, 2, 0, 0]}>
+            {data.map((d, i) => <Cell key={i} fill={d.dii >= 0 ? "#5b8cff" : "#f0a020"} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
+        <span className="font-semibold text-white/80">FII</span>
+        <LegendSwatch color="#16c784" label="net buy" />
+        <LegendSwatch color="#ea3943" label="net sell" />
+        <span className="mx-1 h-3 w-px bg-line" />
+        <span className="font-semibold text-white/80">DII</span>
+        <LegendSwatch color="#5b8cff" label="net buy" />
+        <LegendSwatch color="#f0a020" label="net sell" />
+      </div>
+    </div>
   );
 }
 
