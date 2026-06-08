@@ -99,7 +99,7 @@ function Card({ tip, symbol, name }) {
           <div className="min-w-0">
             <div className="font-bold text-white leading-tight">{t.symbol}</div>
             {company && (
-              <div className="text-xs font-medium text-white/85 leading-snug mt-0.5 max-w-[170px] break-words">
+              <div className="text-xs font-semibold text-accent leading-snug mt-0.5 max-w-[170px] break-words">
                 {company}
               </div>
             )}
