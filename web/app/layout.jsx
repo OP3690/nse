@@ -20,23 +20,38 @@ export default function RootLayout({ children }) {
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
       </head>
       <body className="min-h-screen font-sans antialiased bg-ink">
-        <header className="border-b border-line bg-ink/70 backdrop-blur-xl sticky top-0 z-30">
-          <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-4">
-            <Link href="/" className="font-bold text-lg tracking-tight shrink-0">
-              <span className="text-white">NSE</span>
-              <span className="gradient-text">Flow</span>
+        <header className="sticky top-0 z-30 border-b border-line/80 bg-ink/75 backdrop-blur-xl supports-[backdrop-filter]:bg-ink/60">
+          {/* gradient hairline accent under the header */}
+          <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-accent/40 to-transparent" />
+          <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-4">
+            <Link href="/" className="group flex items-center gap-2 shrink-0" aria-label="NSE Flow home">
+              {/* animated flow mark */}
+              <span className="relative grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-accent/25 to-up/20 ring-1 ring-inset ring-accent/30 transition-transform duration-300 group-hover:scale-105">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
+                  <path d="M3 14l4-4 4 3 6-7" />
+                  <path d="M17 6h3v3" />
+                </svg>
+                <span aria-hidden className="absolute inset-0 rounded-lg bg-accent/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              </span>
+              <span className="font-bold text-lg tracking-tight leading-none">
+                <span className="text-white">NSE</span>
+                <span className="gradient-text">Flow</span>
+              </span>
             </Link>
             <div className="hidden md:block">
               <NavBar />
             </div>
-            <div className="ml-auto flex items-center gap-2 text-xs text-muted">
-              <ThemeToggle />
-              <SyncButton />
-              <span className="hidden sm:inline-flex chip chip-muted">
-                <span className="w-1.5 h-1.5 rounded-full bg-up mr-1 animate-pulse" />
-                Money-flow analytics
+            <div className="ml-auto flex items-center gap-2.5 text-xs text-muted">
+              <div className="flex items-center gap-1.5">
+                <ThemeToggle />
+                <SyncButton />
+              </div>
+              <span className="hidden lg:inline-flex items-center pl-2.5 ml-0.5 border-l border-line/70">
+                <span className="chip chip-up" title="Money-flow analytics · not investment advice">
+                  <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
+                  Live
+                </span>
               </span>
-              <span className="hidden lg:inline">not investment advice</span>
             </div>
           </div>
           <div className="md:hidden border-t border-line/60 px-3 py-2 overflow-x-auto">
