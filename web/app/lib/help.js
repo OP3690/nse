@@ -14,6 +14,24 @@
 
 export const HELP = {
   // ─────────────────────────── Dashboard ───────────────────────────
+  "dash.flow_brief": {
+    title: "Institutional Flow Brief",
+    window: "Cumulative",
+    windowLong: "Running net since the start of the selected window (1M / 3M / All).",
+    what: "The cumulative tug-of-war between foreign (FII) and domestic (DII) institutions, plus a plain-English read of the session.",
+    how: [
+      "Each line is the running sum of daily net cash flow (₹ Cr) from the window start.",
+      "A rising line = sustained net buying; a falling line = persistent distribution.",
+      "The gap between the two lines shows who has been the dominant force over the window.",
+      "The brief is auto-generated from the latest session's flows, breadth, sector leadership and accumulation screen.",
+    ],
+    benchmarks: [
+      { label: "FII line rising", note: "foreign money accumulating over the window", tone: "up" },
+      { label: "DII line rising", note: "domestic funds absorbing / accumulating", tone: "accent" },
+      { label: "both falling", note: "broad institutional de-risking", tone: "down" },
+    ],
+    source: "NSE provisional cash-market FII/DII report",
+  },
   "dash.fii": {
     title: "FII Net",
     window: "1 session",

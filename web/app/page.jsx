@@ -3,6 +3,7 @@ import { Pct, SignalBadge, OiBadge, Stat, BreadthStat, Section, Score, SymbolLin
 import { FiiDiiChart } from "./components/charts";
 import MoneyFlow from "./components/MoneyFlow";
 import MoversBoard from "./components/MoversBoard";
+import MarketBrief from "./components/MarketBrief";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,67 @@ function DeltaChip({ pct }) {
   );
 }
 
+// Auto-generate a plain-English read of the session from the live numbers, for
+// the Institutional Flow Brief. Each item drives one row {tone, icon, head, body}.
+function buildBrief({ fii, dii, m, advPct, sectors, top_accumulation }) {
+  const items = [];
+  const cr = (v) => (v == null ? "—" : `₹${Math.abs(Math.round(v)).toLocaleString("en-IN")} Cr`);
+
+  // 1) Institutional stance — the FII vs DII tug-of-war.
+  if (fii != null && dii != null) {
+    const fW = fii >= 0 ? "bought" : "sold";
+    const dW = dii >= 0 ? "bought" : "sold";
+    let tone = "muted", body = "";
+    if (fii < 0 && dii > 0) {
+      tone = "amber";
+      body = "Domestic institutions are cushioning the foreign outflow — a classic FII-out / DII-in standoff.";
+    } else if (fii > 0 && dii < 0) {
+      tone = "accent";
+      body = "Foreign money is leading while domestics book profits into the strength.";
+    } else if (fii >= 0 && dii >= 0) {
+      tone = "up";
+      body = "Both camps are net buyers — broad institutional demand on the session.";
+    } else {
+      tone = "down";
+      body = "Both foreign and domestic desks were net sellers — institutions de-risking together.";
+    }
+    items.push({ tone, icon: "flow", head: `FII ${fW} ${cr(fii)}, DII ${dW} ${cr(dii)}`, body });
+  }
+
+  // 2) Market breadth.
+  if (advPct != null) {
+    const tone = advPct >= 55 ? "up" : advPct >= 45 ? "amber" : "down";
+    const read = advPct >= 55 ? "healthy participation" : advPct >= 45 ? "a mixed tape" : "weak, narrow breadth";
+    items.push({
+      tone, icon: "breadth", head: `${advPct}% of stocks advanced`,
+      body: `${m.advances?.toLocaleString("en-IN")} up vs ${m.declines?.toLocaleString("en-IN")} down — ${read}.`,
+    });
+  }
+
+  // 3) Sector leadership.
+  if (sectors?.length) {
+    const sorted = [...sectors].sort((a, b) => (b.avg_pct ?? 0) - (a.avg_pct ?? 0));
+    const top = sorted[0], bot = sorted[sorted.length - 1];
+    if (top && bot && top.sector !== bot.sector) {
+      items.push({
+        tone: "accent", icon: "sector", head: `${top.sector} led, ${bot.sector} lagged`,
+        body: `${top.sector} ${top.avg_pct >= 0 ? "+" : ""}${top.avg_pct?.toFixed(2)}% vs ${bot.sector} ${bot.avg_pct?.toFixed(2)}% — where money rotated today.`,
+      });
+    }
+  }
+
+  // 4) Smart-money accumulation screen.
+  if (top_accumulation?.length) {
+    const t = top_accumulation[0];
+    items.push({
+      tone: "up", icon: "star", head: `${t.symbol} tops the accumulation screen`,
+      body: `Score ${t.score} · ${top_accumulation.length} names flag smart-money accumulation on delivery & volume today.`,
+    });
+  }
+
+  return items;
+}
+
 const OI_GROUPS = [
   ["long_buildup", "Long Buildup", "Fresh longs — price ↑, OI ↑", "text-up", "bg-up"],
   ["short_covering", "Short Covering", "Price ↑, OI ↓ — shorts exiting", "text-accent", "bg-accent"],
@@ -86,6 +148,8 @@ export default async function Dashboard() {
   const fiiDelta = sessionDelta(fii, prevSession?.fii);
   const diiDelta = sessionDelta(dii, prevSession?.dii);
   const turnoverDelta = sessionDelta(m.total_turnover_cr, m.total_turnover_cr_prev);
+
+  const brief = buildBrief({ fii, dii, m, advPct, sectors, top_accumulation });
 
   return (
     <div className="space-y-6">
@@ -113,6 +177,11 @@ export default async function Dashboard() {
         <Stat label="Total Turnover" value={fmtCr(m.total_turnover_cr)} sub={`${m.stocks} stocks traded`}
           delta={<DeltaChip pct={turnoverDelta} />} info="dash.turnover" />
       </div>
+
+      {/* auto-generated session brief + cumulative institutional flow trend */}
+      {fiidii?.history?.length > 1 && brief.length > 0 && (
+        <MarketBrief history={fiidii.history} brief={brief} asOf={d.date} />
+      )}
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* FII/DII chart */}

@@ -119,6 +119,59 @@ export function FiiDiiChart({ data }) {
   );
 }
 
+export function CumulativeFlowChart({ data }) {
+  // Running cumulative net FII vs DII (₹ Cr) over the selected window. Reveals
+  // the slower-moving accumulation/distribution trend that daily bars hide:
+  // a rising line is sustained net buying, a falling line persistent selling.
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const GRID = t.grid;
+  // Cumulative ₹ Cr can run to six figures — show as thousands of crore ("k").
+  const kfmt = (v) => {
+    if (v === 0) return "0";
+    const a = Math.abs(v);
+    const s = v < 0 ? "-" : "";
+    if (a >= 100000) return `${s}${(a / 100000).toFixed(1)}L`; // lakh-crore
+    return `${s}${(a / 1000).toFixed(0)}k`;
+  };
+  return (
+    <ResponsiveContainer width="100%" height={240}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: -2, bottom: 0 }}>
+        <defs>
+          <linearGradient id="cumFii" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#16c784" stopOpacity={0.32} />
+            <stop offset="100%" stopColor="#16c784" stopOpacity={0} />
+          </linearGradient>
+          <linearGradient id="cumDii" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#5b8cff" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="#5b8cff" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="date" tick={AXIS} tickFormatter={(d) => d?.slice(5)} minTickGap={36} />
+        <YAxis tick={AXIS} tickFormatter={kfmt} width={50} />
+        <ReferenceLine y={0} stroke={t.zero} />
+        <Tooltip
+          cursor={{ stroke: t.zero, strokeDasharray: "3 3" }}
+          content={({ active, payload, label }) =>
+            active && payload?.length
+              ? box(label, payload.map((p) => ({
+                  name: p.dataKey === "fii_cum" ? "FII cumulative" : "DII cumulative",
+                  color: p.dataKey === "fii_cum" ? "#16c784" : "#5b8cff",
+                  value: `${p.value >= 0 ? "+" : ""}₹${Number(p.value).toLocaleString("en-IN")} Cr`,
+                })))
+              : null
+          }
+        />
+        <Area type="monotone" dataKey="dii_cum" name="DII" stroke="#5b8cff" strokeWidth={2}
+          fill="url(#cumDii)" dot={false} isAnimationActive animationDuration={900} />
+        <Area type="monotone" dataKey="fii_cum" name="FII" stroke="#16c784" strokeWidth={2}
+          fill="url(#cumFii)" dot={false} isAnimationActive animationDuration={1000} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function PriceDeliveryChart({ data, trendline }) {
   // Overlay a straight regression trendline by attaching its two endpoints to
   // the matching rows; recharts connects them across nulls with connectNulls.
