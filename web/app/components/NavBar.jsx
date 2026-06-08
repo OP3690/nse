@@ -11,6 +11,7 @@ const LINKS = [
   ["/intelligence", "Intelligence"],
   ["/ipo", "IPO Radar"],
   ["/screener", "Screener"],
+  ["/strategy", "Strategy Lab"],
 ];
 
 export default function NavBar() {

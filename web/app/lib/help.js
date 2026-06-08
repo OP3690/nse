@@ -776,4 +776,107 @@ export const HELP = {
     ],
     source: "Trailing 1-year price history",
   },
+
+  // ── Strategy Lab ──────────────────────────────────────────────────────────
+  "strategy.overview": {
+    title: "Strategy Lab",
+    window: "~1 year of daily history",
+    windowLong: "Quant analytics computed over the full stored daily price/delivery history of the liquid universe.",
+    what: "A quant workbench: rules-based strategy backtests, classic equity-factor scores, technical signal screens and portfolio risk metrics — all descriptive, none investment advice.",
+    how: [
+      "Builds an aligned daily-close matrix for the most liquid names and computes returns, volatility and a self-built equal-weight market proxy.",
+      "Runs walk-forward monthly-rebalanced backtests, cross-sectional factor z-scores, a market-regime composite, and per-stock risk statistics.",
+      "Everything is recomputed each EOD run from the same data the rest of the platform uses — no external signals.",
+    ],
+    benchmarks: [
+      { label: "Backtested", note: "hypothetical, costs/slippage ignored", tone: "muted" },
+      { label: "Not advice", note: "descriptive analytics only", tone: "amber" },
+    ],
+    source: "Daily price / delivery history of the liquid universe",
+  },
+  "strategy.regime": {
+    title: "Market Regime",
+    window: "Latest session vs ~1yr context",
+    windowLong: "A 0–100 composite combining several breadth and risk gauges as of the latest session.",
+    what: "One risk dial for the whole market — high reads risk-on, low reads risk-off — built from breadth, trend participation, volatility, institutional flow and drawdown.",
+    how: [
+      "Each component (daily advancing breadth, share of stocks above their 50- and 200-DMA, India VIX, FII net flow, market drawdown, average RSI) is mapped to a 0–100 sub-score.",
+      "Sub-scores are blended into a single composite; the label (Risk-Off → Neutral → Risk-On) follows the band the score lands in.",
+      "Higher is calmer/stronger participation; lower means thin breadth, high volatility or heavy drawdown.",
+    ],
+    benchmarks: [
+      { label: "≥ 65", note: "risk-on — broad strength", tone: "up" },
+      { label: "35–65", note: "neutral / mixed", tone: "amber" },
+      { label: "< 35", note: "risk-off — defensive", tone: "down" },
+    ],
+    source: "Cross-sectional breadth + VIX + FII flow over the liquid universe",
+  },
+  "strategy.backtests": {
+    title: "Strategy Backtests",
+    window: "Walk-forward, ~21-session rebalance",
+    windowLong: "Monthly-rebalanced portfolios simulated across the full stored history versus an equal-weight benchmark.",
+    what: "Equity curves and risk stats for three transparent, rules-based portfolios: cross-sectional momentum, low-volatility, and 52-week-high breakout.",
+    how: [
+      "Every ~21 sessions, rank the universe by the strategy's metric and hold the top quintile, equal-weighted, until the next rebalance.",
+      "Compound realised forward returns into an equity curve and compare against an equal-weight benchmark of the same names.",
+      "Report final multiple, CAGR, annualised volatility, Sharpe, maximum drawdown and the share of winning rebalance periods.",
+    ],
+    benchmarks: [
+      { label: "Beats benchmark", note: "CAGR above equal-weight", tone: "up" },
+      { label: "Sharpe > 1", note: "strong risk-adjusted return", tone: "up" },
+      { label: "Hypothetical", note: "ignores costs, slippage, taxes", tone: "amber" },
+    ],
+    source: "Walk-forward simulation over stored daily closes",
+  },
+  "strategy.factors": {
+    title: "Factor Scores",
+    window: "Cross-sectional, ~1yr inputs",
+    windowLong: "Each factor is z-scored across the whole liquid universe on the latest session using ~1-year inputs.",
+    what: "Four classic equity factors — Momentum, Low-Volatility, Quality and Trend — plus a composite that averages them, so a score reads as standard deviations from the market.",
+    how: [
+      "Momentum = 12-1 trailing return (6-month return excluding the most recent month); Low-Vol = inverse annualised volatility.",
+      "Quality = delivery-to-traded ratio (real demand vs intraday churn); Trend = distance above the 200-DMA scaled by 60-day regression fit.",
+      "Each raw factor is standardised (z-score) across the universe; the composite is the equal-weight average of the four z-scores.",
+    ],
+    benchmarks: [
+      { label: "z > +1.5σ", note: "strongly favoured on the factor", tone: "up" },
+      { label: "±0.5σ", note: "around the market average", tone: "muted" },
+      { label: "z < −0.5σ", note: "factor headwind", tone: "down" },
+    ],
+    source: "Cross-sectional z-scores over the liquid universe",
+  },
+  "strategy.signals": {
+    title: "Technical Signal Screens",
+    window: "Latest session",
+    windowLong: "Classic chart patterns scanned across the universe as of the latest close.",
+    what: "Today's matches for standard technical setups — moving-average crossovers, MACD, RSI extremes, Bollinger and 52-week breakouts, and volume dry-ups.",
+    how: [
+      "Compute SMAs/EMAs, RSI, MACD and Bollinger bands per stock from its price history.",
+      "Flag golden/death crosses, MACD bullish crosses, RSI oversold/overbought, band and 52-week-high breakouts, and below-average volume.",
+      "Each screen lists matching symbols with the close and the relevant detail; counts show how broad the setup is.",
+    ],
+    benchmarks: [
+      { label: "Golden cross", note: "50-DMA crosses above 200-DMA", tone: "up" },
+      { label: "RSI < 30", note: "oversold", tone: "accent" },
+      { label: "Death cross", note: "50-DMA crosses below 200-DMA", tone: "down" },
+    ],
+    source: "Technical indicators computed from EOD price history",
+  },
+  "strategy.risk": {
+    title: "Risk Metrics",
+    window: "~1 year of daily returns",
+    windowLong: "Annualised statistics from daily returns over the stored history for the most liquid names.",
+    what: "Per-stock annualised return and volatility, Sharpe and Sortino ratios, beta versus an equal-weight market proxy, and maximum drawdown — with leaderboards.",
+    how: [
+      "Daily returns → annualised return and volatility (×252 / √252); Sharpe and Sortino use a 7% risk-free rate.",
+      "Beta is regressed against a self-built equal-weight market proxy (the index table lacks deep history).",
+      "Maximum drawdown is the worst peak-to-trough decline over the window; leaderboards rank best Sharpe, lowest vol, lowest and highest beta.",
+    ],
+    benchmarks: [
+      { label: "Sharpe > 1", note: "strong reward per unit risk", tone: "up" },
+      { label: "Beta < 1", note: "defensive vs market", tone: "accent" },
+      { label: "Deep drawdown", note: "large historical loss", tone: "down" },
+    ],
+    source: "Daily-return statistics over the stored price history",
+  },
 };

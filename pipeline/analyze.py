@@ -22,6 +22,7 @@ import movers
 import mongo
 import sectors
 import store
+import strategy
 
 # ETFs, gold/silver funds, G-Secs and index trackers trade on series EQ but
 # aren't "stocks" — exclude them from headline lists (kept in the full screener).
@@ -657,6 +658,11 @@ def build(con) -> dict:
     # --- 3-6 month intelligence (accumulation, rotation, regime, divergence) ---
     intel_data = intel.build_intel(con, date, sec_map, names)
 
+    # --- Strategy Lab: regime gauge, risk metrics, factor scores, technical
+    # signals, walk-forward backtests (descriptive analytics, not advice) ---
+    strategy_data = strategy.build_strategy(
+        date, histories, headline, feats, idx_rows, fii_latest)
+
     # --- IPO Radar: recently listed stocks scored on post-listing behaviour ---
     ipo_data = ipo.build_ipo_payload(
         con, date, sec_map, {e["symbol"]: e for e in screener})
@@ -694,6 +700,7 @@ def build(con) -> dict:
         "fiidii": {"latest": fii_latest, "history": fh},
         "flows": flow_data,
         "intel": intel_data,
+        "strategy": strategy_data,
         "ipo": ipo_data,
         "movers": movers_data,
         "pulse": pulse_data,
