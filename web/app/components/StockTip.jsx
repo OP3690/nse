@@ -89,6 +89,8 @@ function Card({ tip, symbol, name }) {
   const t = tip || { symbol, company: name };
   const up = (t.pct_change || 0) >= 0;
   const indices = t.indices || [];
+  // Fall back to the name passed by the caller if the shared map lacks one.
+  const company = t.company || name;
   return (
     <div className="w-72 rounded-xl border border-line bg-panel2/95 backdrop-blur-md shadow-2xl shadow-black/50 ring-1 ring-white/5 overflow-hidden animate-rise">
       {/* header */}
@@ -96,7 +98,7 @@ function Card({ tip, symbol, name }) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="font-bold text-white leading-tight">{t.symbol}</div>
-            {t.company && <div className="text-[11px] text-muted truncate max-w-[150px]">{t.company}</div>}
+            {company && <div className="text-[11px] text-muted truncate max-w-[150px]">{company}</div>}
           </div>
           <div className="text-right shrink-0">
             <div className="font-mono font-bold text-white tabular-nums">
