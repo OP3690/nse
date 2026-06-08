@@ -98,7 +98,11 @@ function Card({ tip, symbol, name }) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="font-bold text-white leading-tight">{t.symbol}</div>
-            {company && <div className="text-[11px] text-muted truncate max-w-[150px]">{company}</div>}
+            {company && (
+              <div className="text-xs font-medium text-white/85 leading-snug mt-0.5 max-w-[170px] break-words">
+                {company}
+              </div>
+            )}
           </div>
           <div className="text-right shrink-0">
             <div className="font-mono font-bold text-white tabular-nums">
