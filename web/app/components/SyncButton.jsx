@@ -8,17 +8,32 @@ import { useRouter } from "next/navigation";
 // components so the new numbers appear. Local-only (needs the Python pipeline).
 export default function SyncButton() {
   const router = useRouter();
-  const [state, setState] = useState("idle"); // idle | syncing | done | error
+  const [state, setState] = useState("idle"); // idle | syncing | queued | done | error
   const [msg, setMsg] = useState("");
 
   async function sync() {
-    if (state === "syncing") return;
+    if (state === "syncing" || state === "queued") return;
     setState("syncing");
     setMsg("");
     try {
       const res = await fetch("/api/sync", { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) {
+      if (res.ok && data.ok && data.mode === "dispatched") {
+        // Cloud refresh queued on GitHub's runner — the new numbers land in Mongo
+        // a couple of minutes later, so poll a few times rather than refresh now.
+        setState("queued");
+        setMsg("Queued — updating…");
+        let tries = 0;
+        const poll = setInterval(() => {
+          tries += 1;
+          router.refresh();
+          if (tries >= 4) { // ~4 refreshes over ~4 min, then settle
+            clearInterval(poll);
+            setState("idle");
+            setMsg("");
+          }
+        }, 60000);
+      } else if (res.ok && data.ok) {
         setState("done");
         setMsg(`Updated in ${data.elapsed ?? "?"}s`);
         router.refresh(); // pull fresh server-rendered data
@@ -38,18 +53,22 @@ export default function SyncButton() {
   const tone =
     state === "error" ? "text-down border-down/40 hover:border-down"
     : state === "done" ? "text-up border-up/40 hover:border-up"
+    : state === "queued" ? "text-accent border-accent/40"
     : "text-muted border-line hover:text-white hover:border-accent";
 
   const label =
     state === "syncing" ? "Syncing…"
+    : state === "queued" ? (msg || "Queued…")
     : state === "done" ? (msg || "Updated")
     : state === "error" ? (msg || "Failed")
     : "Sync";
 
+  const busy = state === "syncing" || state === "queued";
+
   return (
     <button
       onClick={sync}
-      disabled={state === "syncing"}
+      disabled={busy}
       title={state === "idle" ? "Refresh latest data now" : msg || label}
       aria-label="Refresh latest data"
       className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-80 ${tone}`}
@@ -57,7 +76,7 @@ export default function SyncButton() {
       <svg
         viewBox="0 0 24 24" width="13" height="13" fill="none"
         stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-        className={state === "syncing" ? "animate-spin" : ""}
+        className={busy ? "animate-spin" : ""}
       >
         <path d="M21 12a9 9 0 1 1-2.64-6.36" />
         <path d="M21 3v6h-6" />
