@@ -19,6 +19,41 @@ from nse_client import NSEClient
 ROOT = Path(__file__).resolve().parent
 
 
+def _refresh_shareholding(session_date: dt.date, limit: int = 250) -> None:
+    """Top-up quarterly shareholding once a week (Fridays), best-effort.
+
+    Quarterly filings change only ~4×/year, so a weekly pass over the most
+    liquid names — gated by `refresh-days` so fresh symbols are skipped — keeps
+    the per-stock ownership-flow section current without hammering NSE daily.
+    Never fatal: a failure here must not break the daily price/flow run.
+    """
+    if session_date.weekday() != 4:  # Friday only
+        return
+    try:
+        import shareholding
+        import store
+        from backfill_shareholding import _already_fresh, _universe
+        con = store.connect()
+        client = NSEClient()
+        syms = _universe(con, limit)
+        ok = 0
+        for sym in syms:
+            if _already_fresh(con, sym, refresh_days=80):
+                continue
+            try:
+                recs = shareholding.build_for_symbol(client, sym)
+            except Exception:  # noqa: BLE001
+                recs = []
+            if recs:
+                store.store_shareholding(con, recs)
+                con.commit()
+                ok += 1
+        con.close()
+        print(f"  shareholding weekly refresh: updated {ok} symbols")
+    except Exception as e:  # noqa: BLE001
+        print(f"  shareholding refresh skipped: {e!r}")
+
+
 def main(date_str: str | None = None):
     print(f"=== NSE Flow daily run @ {dt.datetime.now():%Y-%m-%d %H:%M} ===")
 
@@ -38,6 +73,8 @@ def main(date_str: str | None = None):
         return 1
 
     ingest_dir(raw_dir)
+    session_date = dt.date.fromisoformat(manifest["iso"]) if manifest.get("iso") else dt.date.today()
+    _refresh_shareholding(session_date)
     analyze.run()
     print("=== done ===")
     return 0
