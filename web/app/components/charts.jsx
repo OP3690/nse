@@ -134,6 +134,7 @@ export function CumulativeFlowChart({ data }) {
     if (a >= 100000) return `${s}${(a / 100000).toFixed(1)}L`; // lakh-crore
     return `${s}${(a / 1000).toFixed(0)}k`;
   };
+  const last = data[data.length - 1] || {};
   return (
     <ResponsiveContainer width="100%" height={240}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: -2, bottom: 0 }}>
@@ -167,6 +168,12 @@ export function CumulativeFlowChart({ data }) {
           fill="url(#cumDii)" dot={false} isAnimationActive animationDuration={900} />
         <Area type="monotone" dataKey="fii_cum" name="FII" stroke="#16c784" strokeWidth={2}
           fill="url(#cumFii)" dot={false} isAnimationActive animationDuration={1000} />
+        {last.date != null && (
+          <ReferenceDot x={last.date} y={last.dii_cum} r={4} fill="#5b8cff" stroke={t.ink} strokeWidth={1.5} ifOverflow="extendDomain" isFront />
+        )}
+        {last.date != null && (
+          <ReferenceDot x={last.date} y={last.fii_cum} r={4} fill="#16c784" stroke={t.ink} strokeWidth={1.5} ifOverflow="extendDomain" isFront />
+        )}
       </AreaChart>
     </ResponsiveContainer>
   );

@@ -65,13 +65,57 @@ function DeltaChip({ pct }) {
   );
 }
 
+// Quantitative flow analytics over the daily FII/DII history: streaks, 10-session
+// hit-rates, 5/20-day net momentum, and a normalised institutional-pressure score
+// (z-score of the latest 5-day rolling combined net vs its own history, ±100).
+function flowAnalytics(history) {
+  if (!history?.length) return {};
+  const fii = history.map((h) => h.fii || 0);
+  const dii = history.map((h) => h.dii || 0);
+  const combined = history.map((h, i) => fii[i] + dii[i]);
+  const n = history.length;
+  const sum = (a) => a.reduce((s, v) => s + v, 0);
+  const streak = (arr, sign) => {
+    let c = 0;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (arr[i] !== 0 && Math.sign(arr[i]) === sign) c++; else break;
+    }
+    return c;
+  };
+  const lastFiiSign = Math.sign(fii[n - 1]);
+  const lastDiiSign = Math.sign(dii[n - 1]);
+  const last10 = (a) => a.slice(-10);
+  const fiiBuy10 = last10(fii).filter((v) => v > 0).length;
+  const diiBuy10 = last10(dii).filter((v) => v > 0).length;
+  const net5 = sum(combined.slice(-5));
+  const net20 = sum(combined.slice(-20));
+
+  // 5-day rolling-mean z-score → institutional pressure (−100 distribution … +100 accumulation)
+  const roll = [];
+  for (let i = 4; i < combined.length; i++) {
+    roll.push(sum(combined.slice(i - 4, i + 1)) / 5);
+  }
+  let pressure = 0;
+  if (roll.length > 1) {
+    const mu = sum(roll) / roll.length;
+    const sd = Math.sqrt(sum(roll.map((x) => (x - mu) ** 2)) / roll.length) || 1;
+    pressure = Math.max(-100, Math.min(100, Math.round(((roll[roll.length - 1] - mu) / sd) * 50)));
+  }
+  return {
+    fiiStreak: streak(fii, lastFiiSign), diiStreak: streak(dii, lastDiiSign),
+    lastFiiSign, lastDiiSign, fiiBuy10, diiBuy10, net5, net20, pressure,
+    sessions: Math.min(10, n),
+  };
+}
+
 // Auto-generate a plain-English read of the session from the live numbers, for
 // the Institutional Flow Brief. Each item drives one row {tone, icon, head, body}.
-function buildBrief({ fii, dii, m, advPct, sectors, top_accumulation }) {
+function buildBrief({ fii, dii, m, advPct, sectors, top_accumulation, analytics }) {
   const items = [];
   const cr = (v) => (v == null ? "—" : `₹${Math.abs(Math.round(v)).toLocaleString("en-IN")} Cr`);
+  const a = analytics || {};
 
-  // 1) Institutional stance — the FII vs DII tug-of-war.
+  // 1) Institutional stance — the FII vs DII tug-of-war + recent persistence.
   if (fii != null && dii != null) {
     const fW = fii >= 0 ? "bought" : "sold";
     const dW = dii >= 0 ? "bought" : "sold";
@@ -89,7 +133,19 @@ function buildBrief({ fii, dii, m, advPct, sectors, top_accumulation }) {
       tone = "down";
       body = "Both foreign and domestic desks were net sellers — institutions de-risking together.";
     }
-    items.push({ tone, icon: "flow", head: `FII ${fW} ${cr(fii)}, DII ${dW} ${cr(dii)}`, body });
+    if (a.fiiStreak >= 2) {
+      body += ` FII on a ${a.fiiStreak}-session ${a.lastFiiSign < 0 ? "selling" : "buying"} streak`;
+      body += a.diiStreak >= 2 ? `, DII ${a.diiStreak}-session ${a.lastDiiSign < 0 ? "selling" : "buying"} run.` : ".";
+    }
+    items.push({
+      tone, icon: "flow", head: `FII ${fW} ${cr(fii)}, DII ${dW} ${cr(dii)}`, body,
+      chips: a.sessions
+        ? [
+            { label: `FII buys ${a.fiiBuy10}/${a.sessions}`, tone: a.fiiBuy10 >= a.sessions / 2 ? "up" : "down" },
+            { label: `DII buys ${a.diiBuy10}/${a.sessions}`, tone: a.diiBuy10 >= a.sessions / 2 ? "accent" : "amber" },
+          ]
+        : null,
+    });
   }
 
   // 2) Market breadth.
@@ -149,7 +205,8 @@ export default async function Dashboard() {
   const diiDelta = sessionDelta(dii, prevSession?.dii);
   const turnoverDelta = sessionDelta(m.total_turnover_cr, m.total_turnover_cr_prev);
 
-  const brief = buildBrief({ fii, dii, m, advPct, sectors, top_accumulation });
+  const analytics = flowAnalytics(fiidii?.history || []);
+  const brief = buildBrief({ fii, dii, m, advPct, sectors, top_accumulation, analytics });
 
   return (
     <div className="space-y-6">
@@ -180,7 +237,8 @@ export default async function Dashboard() {
 
       {/* auto-generated session brief + cumulative institutional flow trend */}
       {fiidii?.history?.length > 1 && brief.length > 0 && (
-        <MarketBrief history={fiidii.history} brief={brief} asOf={d.date} />
+        <MarketBrief history={fiidii.history} brief={brief} asOf={d.date}
+          pressure={analytics.pressure} net5={analytics.net5} net20={analytics.net20} />
       )}
 
       <div className="grid lg:grid-cols-3 gap-6">
