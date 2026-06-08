@@ -3,6 +3,7 @@ import { getStock, fmtCr } from "../../lib/data";
 import { Pct, SignalBadge, OiBadge, Score, Stat, TrendBadge, TrendScore, Confidence } from "../../components/ui";
 import { PriceDeliveryChart, OiChart } from "../../components/charts";
 import StockTechnicals from "../../components/StockTechnicals";
+import ShareholdingFlow from "../../components/ShareholdingFlow";
 import InfoDot from "../../components/InfoDot";
 
 export const dynamic = "force-dynamic";
@@ -164,6 +165,10 @@ export default async function StockPage({ params }) {
           </p>
         </section>
       </div>
+
+      {d.shareholding && d.shareholding.categories && (
+        <ShareholdingFlow data={d.shareholding} />
+      )}
 
       <section className="card">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">

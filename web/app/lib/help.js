@@ -762,6 +762,24 @@ export const HELP = {
     ],
     source: "NSE F&O bhavcopy history",
   },
+  "stock.shareholding": {
+    title: "Where Money Is Flowing — Ownership",
+    window: "Latest quarter (~90 days)",
+    windowLong: "Net change between the two most recent quarterly shareholding filings.",
+    what: "Who owns this company and how the four ownership groups shifted last quarter — in holding % and an estimated ₹ value.",
+    how: [
+      "Categories: Promoters, FII / FPI (foreign), DII (domestic institutions), Public (retail & others).",
+      "Δpp = change in holding-% vs the prior quarter (percentage points).",
+      "Estimated ₹ = Δholding-% × shares outstanding × current price — an estimate, not transacted value.",
+      "Green = accumulation (buying), red = distribution (selling).",
+    ],
+    benchmarks: [
+      { label: "Accumulating", note: "holding % rising", tone: "up" },
+      { label: "Distributing", note: "holding % falling", tone: "down" },
+      { label: "Steady", note: "little change", tone: "muted" },
+    ],
+    source: "NSE quarterly shareholding-pattern filings (XBRL)",
+  },
   "stock.technical": {
     title: "Technical Analysis",
     window: "Selectable (1M–All)",

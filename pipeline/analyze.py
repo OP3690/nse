@@ -177,6 +177,56 @@ def load_wk52(con) -> dict[str, dict]:
             for r in con.execute("SELECT symbol, wk_high, wk_low FROM wk52")}
 
 
+def load_shareholding(con) -> dict[str, list[dict]]:
+    """Symbol -> newest-first list of quarterly shareholding rows. Empty if the
+    table doesn't exist yet (old DBs / before the first backfill)."""
+    out: dict[str, list[dict]] = {}
+    try:
+        cur = con.execute(
+            "SELECT date, symbol, promoter_pct, fii_pct, dii_pct, public_pct, total_shares "
+            "FROM shareholding_quarterly ORDER BY symbol, date DESC")
+    except Exception:  # noqa: BLE001 — table may not exist
+        return out
+    for r in cur:
+        out.setdefault(r["symbol"], []).append(dict(r))
+    return out
+
+
+# The four categories shown in the per-stock shareholding panel, in display order.
+_SHP_CATS = (("promoter", "Promoters", "promoter_pct"),
+             ("fii", "FII / FPI", "fii_pct"),
+             ("dii", "DII", "dii_pct"),
+             ("public", "Public", "public_pct"))
+
+
+def build_shareholding_block(rows: list[dict], close: float | None) -> dict | None:
+    """Latest quarter vs the prior one: per-category holding-% change and an
+    estimated ₹ flow (Δ% × total shares × price). `rows` is newest-first."""
+    if not rows or rows[0].get("fii_pct") is None and rows[0].get("dii_pct") is None:
+        return None
+    latest, prev = rows[0], (rows[1] if len(rows) > 1 else None)
+    shares = latest.get("total_shares") or (prev.get("total_shares") if prev else None)
+    cats = []
+    for key, label, col in _SHP_CATS:
+        pct = latest.get(col)
+        prev_pct = prev.get(col) if prev else None
+        delta = round(pct - prev_pct, 2) if pct is not None and prev_pct is not None else None
+        est_cr = None
+        if delta is not None and shares and close:
+            est_cr = round(delta / 100.0 * shares * close / 1e7, 1)
+        cats.append({"key": key, "label": label, "pct": pct,
+                     "prev_pct": prev_pct, "delta_pp": delta, "est_cr": est_cr})
+    # Oldest-first trend for charting (cap at 8 quarters / ~2yr). Only quarters
+    # with a real FII/DII split — older filings lack it and report full-public
+    # (not retail-only), which would distort the lines.
+    split = [r for r in rows[:8] if r.get("fii_pct") is not None]
+    trend = [{"date": r["date"], "promoter": r.get("promoter_pct"), "fii": r.get("fii_pct"),
+              "dii": r.get("dii_pct"), "public": r.get("public_pct")}
+             for r in reversed(split)]
+    return {"asof": latest["date"], "prev": prev["date"] if prev else None,
+            "total_shares": shares, "categories": cats, "trend": trend}
+
+
 def load_names(con) -> dict[str, str]:
     """Symbol -> company name. Equity master is the primary source; IPO issues
     and bulk/block deal security names backfill anything the master misses."""
@@ -741,14 +791,17 @@ def emit_histories(con, screener, histories, forecasts):
     out_dir = WEB_DATA / "stocks"
     out_dir.mkdir(parents=True, exist_ok=True)
     meta = {e["symbol"]: e for e in screener}
+    shp = load_shareholding(con)
     docs = []
     for sym in meta:
         series = histories.get(sym)
         if not series:
             continue
         f = forecasts.get(sym)
-        doc = {"symbol": sym, "meta": meta.get(sym), "history": series,
-               "forecast": f, "trendline": f.get("trendline") if f else None}
+        m = meta.get(sym)
+        doc = {"symbol": sym, "meta": m, "history": series,
+               "forecast": f, "trendline": f.get("trendline") if f else None,
+               "shareholding": build_shareholding_block(shp.get(sym, []), (m or {}).get("close"))}
         docs.append(doc)
         (out_dir / f"{sym}.json").write_text(json.dumps(doc, separators=(",", ":")))
     return docs

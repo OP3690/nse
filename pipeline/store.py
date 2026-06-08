@@ -110,6 +110,18 @@ CREATE TABLE IF NOT EXISTS ipo_issues (
     ipo_start TEXT, ipo_end TEXT, fetched_at TEXT
 );
 
+-- Quarterly shareholding pattern per symbol (Promoter / FII / DII / Public %),
+-- from NSE's shareholding-master + the detailed XBRL filing. date = quarter-end
+-- (YYYY-MM-DD). total_shares is the company's fully-paid equity count, used to
+-- turn a holding-% change into an estimated ₹ flow. Idempotent per (date,symbol).
+CREATE TABLE IF NOT EXISTS shareholding_quarterly (
+    date TEXT, symbol TEXT,
+    promoter_pct REAL, fii_pct REAL, dii_pct REAL, public_pct REAL,
+    total_shares INTEGER,
+    PRIMARY KEY (date, symbol)
+);
+CREATE INDEX IF NOT EXISTS idx_shp_symbol ON shareholding_quarterly(symbol);
+
 -- Open / upcoming IPOs from NSE's all-upcoming-issues + ipo-current-issue APIs.
 -- sub_times = live subscription multiple (Total). Refreshed each run; the whole
 -- table is cleared and repopulated since the open set changes daily.
@@ -270,6 +282,19 @@ def store_cat_turnover(con, parsed):
             [[m["month"], m.get("buy"), m.get("sell"), m.get("net")] for m in months])
         n += len(months)
     return n
+
+
+def store_shareholding(con, rows):
+    """rows = [{date, symbol, promoter_pct, fii_pct, dii_pct, public_pct, total_shares}].
+    Each row carries its own quarter-end date; idempotent per (date, symbol)."""
+    cols = ["date", "symbol", "promoter_pct", "fii_pct", "dii_pct", "public_pct", "total_shares"]
+    payload = [[r.get(c) for c in cols] for r in rows if r.get("date") and r.get("symbol")]
+    if not payload:
+        return 0
+    con.executemany(
+        f"INSERT OR REPLACE INTO shareholding_quarterly ({','.join(cols)}) "
+        f"VALUES ({','.join('?' * len(cols))})", payload)
+    return len(payload)
 
 
 def store_indices(con, rows, date):
