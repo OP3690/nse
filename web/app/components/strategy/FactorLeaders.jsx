@@ -3,6 +3,7 @@
 import { useState } from "react";
 import InfoDot from "../InfoDot";
 import { SymbolLink } from "../ui";
+import FactorRadar from "./FactorRadar";
 
 const fmt = (v, d = 2) => (v == null ? "—" : Number(v).toFixed(d));
 const zTone = (z) => (z == null ? "text-muted" : z >= 1.5 ? "text-up" : z >= 0.5 ? "text-accent" : z <= -0.5 ? "text-down" : "text-muted");
@@ -57,7 +58,8 @@ export default function FactorLeaders({ factors }) {
       </div>
 
       {composite.length > 0 && (
-        <div>
+        <div className="grid lg:grid-cols-3 gap-4 items-start">
+          <div className="lg:col-span-2">
           <div className="text-sm font-semibold text-white mb-2 mt-1">Composite leaders — balanced across all four factors</div>
           <div className="overflow-x-auto -mx-1 px-1">
             <table className="w-full text-sm border-collapse">
@@ -99,6 +101,8 @@ export default function FactorLeaders({ factors }) {
               {showAll ? "Show fewer" : `Show all ${composite.length} →`}
             </button>
           )}
+          </div>
+          <FactorRadar composite={composite} />
         </div>
       )}
     </section>

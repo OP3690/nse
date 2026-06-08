@@ -351,7 +351,7 @@ def _hi52_metric(C, t):
 def _one_backtest(dates, C, metric_fn, rebal=21, top_frac=0.2):
     n_dates = C.shape[0]
     start = 65  # need ~3m lookback for momentum
-    eq_s, eq_b = [1.0], [1.0]
+    eq_s, eq_b = 1.0, 1.0
     curve = [{"t": dates[start], "s": 1.0, "b": 1.0}]
     period_s, period_b, wins, periods = [], [], 0, 0
     for t in range(start, n_dates - 1, rebal):
@@ -369,28 +369,38 @@ def _one_backtest(dates, C, metric_fn, rebal=21, top_frac=0.2):
         b_ret = float(np.nanmean(fwd[vidx]))
         if not (math.isfinite(s_ret) and math.isfinite(b_ret)):
             continue
-        eq_s.append(eq_s[-1] * (1 + s_ret))
-        eq_b.append(eq_b[-1] * (1 + b_ret))
+        base_s, base_b = eq_s, eq_b
+        # mark the basket to market every session inside the holding window so the
+        # equity curve is smooth (daily) rather than a coarse rebalance-point line
+        for u in range(t + 1, t2 + 1):
+            with np.errstate(invalid="ignore"):
+                s_u = np.nanmean(C[u, top] / C[t, top] - 1.0)
+                b_u = np.nanmean(C[u, vidx] / C[t, vidx] - 1.0)
+            s_u = s_u if math.isfinite(s_u) else 0.0
+            b_u = b_u if math.isfinite(b_u) else 0.0
+            curve.append({"t": dates[u], "s": round(base_s * (1 + s_u), 4),
+                          "b": round(base_b * (1 + b_u), 4)})
+        eq_s = base_s * (1 + s_ret)
+        eq_b = base_b * (1 + b_ret)
         period_s.append(s_ret)
         period_b.append(b_ret)
         wins += 1 if s_ret > b_ret else 0
         periods += 1
-        curve.append({"t": dates[t2], "s": round(eq_s[-1], 4), "b": round(eq_b[-1], 4)})
     if periods < 4:
         return None
     ps = np.asarray(period_s)
     years = periods * rebal / TRADING_DAYS
     ann_factor = TRADING_DAYS / rebal
-    final_s, final_b = eq_s[-1], eq_b[-1]
+    final_s, final_b = eq_s, eq_b
     cagr = final_s ** (1 / years) - 1 if years > 0 and final_s > 0 else None
     vol = float(ps.std(ddof=1)) * math.sqrt(ann_factor) if ps.size > 1 else 0.0
     mean_p = float(ps.mean())
     sharpe = ((mean_p * ann_factor - RF_ANNUAL) / vol) if vol else None
-    # max drawdown of strategy equity
-    peak, mdd = eq_s[0], 0.0
-    for x in eq_s:
-        peak = max(peak, x)
-        mdd = min(mdd, x / peak - 1.0)
+    # max drawdown off the daily equity curve
+    peak, mdd = 1.0, 0.0
+    for p in curve:
+        peak = max(peak, p["s"])
+        mdd = min(mdd, p["s"] / peak - 1.0)
     return {
         "periods": periods, "years": round(years, 2), "rebal_days": rebal,
         "top_frac": top_frac,
@@ -546,6 +556,21 @@ def build_strategy(date, histories, headline, feats, idx_rows, fiidii_latest) ->
     # table: most liquid / highest-score names first
     risk_rows.sort(key=lambda r: (r["score"] or 0), reverse=True)
 
+    # lean point-cloud for the risk/return scatter — the most liquid ~280 names
+    # with finite vol & return, carrying only what the chart needs
+    scatter = []
+    for r in risk_rows:
+        if r["ann_vol"] is None or r["ann_ret"] is None:
+            continue
+        scatter.append({
+            "symbol": r["symbol"], "sector": r["sector"], "score": r["score"],
+            "ann_ret": round(r["ann_ret"], 1), "ann_vol": round(r["ann_vol"], 1),
+            "sharpe": None if r["sharpe"] is None else round(r["sharpe"], 2),
+            "beta": None if r["beta"] is None else round(r["beta"], 2),
+        })
+        if len(scatter) >= 280:
+            break
+
     vix = None
     for r in (idx_rows or []):
         if (r.get("index") or "").upper() == "INDIA VIX":
@@ -567,5 +592,5 @@ def build_strategy(date, histories, headline, feats, idx_rows, fiidii_latest) ->
         "backtests": backtests,
         "factors": _factor_scores(meta, feats, syms, risk_by_sym),
         "signals": _technical_signals(histories, meta, syms),
-        "risk": {"leaders": leaders, "rows": risk_rows[:60]},
+        "risk": {"leaders": leaders, "rows": risk_rows[:60], "scatter": scatter},
     }

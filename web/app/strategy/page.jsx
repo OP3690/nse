@@ -1,8 +1,10 @@
 import { getLatest } from "../lib/data";
 import { PageHeader } from "../components/ui";
+import InsightStrip from "../components/strategy/InsightStrip";
 import RegimeGauge from "../components/strategy/RegimeGauge";
 import StrategyBacktests from "../components/strategy/StrategyBacktests";
 import FactorLeaders from "../components/strategy/FactorLeaders";
+import RiskReturnScatter from "../components/strategy/RiskReturnScatter";
 import SignalScreens from "../components/strategy/SignalScreens";
 import RiskLeaders from "../components/strategy/RiskLeaders";
 
@@ -44,9 +46,11 @@ export default async function StrategyPage() {
         explicitly not investment advice.
       </PageHeader>
 
+      <InsightStrip strategy={s} />
       <RegimeGauge regime={s.regime} />
       <StrategyBacktests backtests={s.backtests} />
       <FactorLeaders factors={s.factors} />
+      <RiskReturnScatter scatter={s.risk?.scatter} />
       <SignalScreens signals={s.signals} />
       <RiskLeaders risk={s.risk} />
     </div>

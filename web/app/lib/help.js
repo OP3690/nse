@@ -862,6 +862,23 @@ export const HELP = {
     ],
     source: "Technical indicators computed from EOD price history",
   },
+  "strategy.risk_map": {
+    title: "Risk / Return Map",
+    window: "~1 year of daily returns",
+    windowLong: "Annualized risk and return for the most liquid names over the stored daily history.",
+    what: "A scatter of every liquid stock by annualized volatility (risk) against annualized return (reward), coloured by Sharpe ratio and sized by smart-money score.",
+    how: [
+      "X axis is annualized volatility (σ × √252); Y axis is annualized return; the dashed line marks the 7% risk-free rate.",
+      "Colour encodes the Sharpe ratio — green is strong risk-adjusted return, red is poor; point size scales with the smart-money score.",
+      "The up-and-left quadrant (high return, low risk) is favourable; down-and-right is the opposite. 'Trim outliers' clips the view to the 2nd–98th percentile.",
+    ],
+    benchmarks: [
+      { label: "Up & left", note: "high return for low risk — efficient", tone: "up" },
+      { label: "Above risk-free", note: "beating the 7% cash benchmark", tone: "accent" },
+      { label: "Below zero", note: "underwater over the window", tone: "down" },
+    ],
+    source: "Daily-return statistics over the stored price history",
+  },
   "strategy.risk": {
     title: "Risk Metrics",
     window: "~1 year of daily returns",
