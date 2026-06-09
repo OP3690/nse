@@ -11,6 +11,7 @@ import json
 import re
 from pathlib import Path
 
+import corp
 import flows
 import forecast
 import indices_membership
@@ -894,6 +895,17 @@ def build(con) -> dict:
     # Compact per-symbol meta for the rich hover-card (shared lookup map).
     tooltips = build_tooltips(headline, histories)
 
+    # --- corporate disclosures: Earnings & Events (setup / verdict / lean) ---
+    # Joins the ingested announcements/calendar/results to the enriched per-stock
+    # entries to score pre-event accumulation and post-event reaction. Best-effort:
+    # missing corp tables (e.g. on first run) just yield an empty section.
+    try:
+        corp_payload, corp_summary = corp.build_payload(
+            con, {e["symbol"]: e for e in headline}, today=dt.date.fromisoformat(date))
+    except Exception as _ce:  # noqa: BLE001
+        print(f"  corp payload skipped: {_ce!r}")
+        corp_payload, corp_summary = {}, {}
+
     _all_dates = available_dates(con)
     _prev_date = _all_dates[-2] if len(_all_dates) >= 2 else None
     data = {
@@ -937,24 +949,29 @@ def build(con) -> dict:
         "multibaggers": multibaggers,
         "money_flow": build_money_flow(screener),
         "return_bands": build_return_bands(headline),
+        "corp": corp_payload,
         "screener": headline,
     }
     # carried for emit_histories, popped before serialization
     data["_histories"] = histories
     data["_forecasts"] = forecasts
+    data["_corp_summary"] = corp_summary
     return data
 
 
-def emit_histories(con, screener, histories, forecasts):
+def emit_histories(con, screener, histories, forecasts, corp_summary=None):
     """Per-symbol time series for the stock detail pages (one small file each).
 
     Reuses the histories already loaded by build() (with OI merged) and embeds
     each symbol's forecast — trendline + indicators — so the detail chart can
-    overlay the regression line and surface the directional read."""
+    overlay the regression line and surface the directional read. Also attaches
+    the Management & Financial summary (next event, verdict, financials,
+    announcement timeline) when one was computed for the symbol."""
     out_dir = WEB_DATA / "stocks"
     out_dir.mkdir(parents=True, exist_ok=True)
     meta = {e["symbol"]: e for e in screener}
     shp = load_shareholding(con)
+    corp_summary = corp_summary or {}
     docs = []
     for sym in meta:
         series = histories.get(sym)
@@ -964,7 +981,8 @@ def emit_histories(con, screener, histories, forecasts):
         m = meta.get(sym)
         doc = {"symbol": sym, "meta": m, "history": series,
                "forecast": f, "trendline": f.get("trendline") if f else None,
-               "shareholding": build_shareholding_block(shp.get(sym, []), (m or {}).get("close"))}
+               "shareholding": build_shareholding_block(shp.get(sym, []), (m or {}).get("close")),
+               "corp": corp_summary.get(sym)}
         docs.append(doc)
         (out_dir / f"{sym}.json").write_text(json.dumps(doc, separators=(",", ":")))
     return docs
@@ -975,7 +993,8 @@ def run():
     data = build(con)
     histories = data.pop("_histories")
     forecasts = data.pop("_forecasts")
-    stock_docs = emit_histories(con, data["screener"], histories, forecasts)
+    corp_summary = data.pop("_corp_summary", {})
+    stock_docs = emit_histories(con, data["screener"], histories, forecasts, corp_summary)
     con.close()
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     PROCESSED.mkdir(parents=True, exist_ok=True)

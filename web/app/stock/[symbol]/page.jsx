@@ -4,6 +4,7 @@ import { Pct, SignalBadge, OiBadge, Score, Stat, TrendBadge, TrendScore, Confide
 import { PriceDeliveryChart, OiChart } from "../../components/charts";
 import StockTechnicals from "../../components/StockTechnicals";
 import ShareholdingFlow from "../../components/ShareholdingFlow";
+import ManagementSummary from "../../components/ManagementSummary";
 import InfoDot from "../../components/InfoDot";
 
 export const dynamic = "force-dynamic";
@@ -131,6 +132,8 @@ export default async function StockPage({ params }) {
         <Stat label="Turnover" value={fmtCr(m.turnover_cr)}
           sub={m.inst_net_cr != null ? `Inst net ${m.inst_net_cr > 0 ? "+" : ""}${m.inst_net_cr} Cr` : null} />
       </div>
+
+      {d.corp && <ManagementSummary corp={d.corp} />}
 
       {m.composite != null && (
         <section className="card border border-line bg-panel2">

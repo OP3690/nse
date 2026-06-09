@@ -54,6 +54,21 @@ def _refresh_shareholding(session_date: dt.date, limit: int = 250) -> None:
         print(f"  shareholding refresh skipped: {e!r}")
 
 
+def _refresh_corp(session_date: dt.date) -> None:
+    """Ingest corporate disclosures — announcements, the forward board-meeting
+    calendar, and quarterly results (with best-effort XBRL numbers). Runs every
+    session (the feeds are "current", not date-addressed). Never fatal: a failure
+    here must not break the daily price/flow run."""
+    try:
+        import corp
+        import store
+        con = store.connect()
+        corp.refresh(con, NSEClient())
+        con.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"  corp refresh skipped: {e!r}")
+
+
 def _refresh_ipo(session_date: dt.date) -> None:
     """Refresh IPO feeds — past issues (listing-gain history) and the
     upcoming/current pipeline. Runs every session: the NSE feeds are "current"
@@ -123,6 +138,7 @@ def main(date_str: str | None = None):
     session_date = dt.date.fromisoformat(manifest["iso"]) if manifest.get("iso") else dt.date.today()
     _refresh_shareholding(session_date)
     _refresh_bse_marketcap(session_date)
+    _refresh_corp(session_date)
     _refresh_ipo(session_date)
     analyze.run()
     print("=== done ===")

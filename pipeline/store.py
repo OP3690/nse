@@ -152,6 +152,49 @@ CREATE TABLE IF NOT EXISTS ipo_upcoming (
     status TEXT, sub_times REAL, shares_offered REAL, shares_bid REAL,
     fetched_at TEXT
 );
+
+-- Corporate announcements (filings) from NSE's corporate-announcements API.
+-- One row per disclosure, deduped by NSE's seq_id. `category` + `polarity` are
+-- our own classification of the headline text (order win, fundraise, results,
+-- board change, rating, pledge, concall, ...) and its directional lean
+-- (+1 constructive / 0 neutral / -1 adverse). an_dt is the disclosure ISO ts.
+-- Accumulates across runs (each run ingests a rolling recent window).
+CREATE TABLE IF NOT EXISTS corp_announcements (
+    seq_id TEXT PRIMARY KEY, symbol TEXT, company TEXT, industry TEXT,
+    an_dt TEXT, headline TEXT, detail TEXT,
+    category TEXT, polarity INTEGER, attachment TEXT, has_xbrl INTEGER,
+    fetched_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_corp_ann_symbol ON corp_announcements(symbol);
+CREATE INDEX IF NOT EXISTS idx_corp_ann_dt ON corp_announcements(an_dt);
+
+-- Forward board-meeting calendar from NSE's event-calendar API. Upcoming
+-- intimations with the stated purpose; `kind` is our normalisation of the
+-- purpose (results / dividend / buyback / fundraise / split / bonus / other).
+-- Rebuilt (cleared) each run, since the "upcoming" set rolls forward daily.
+CREATE TABLE IF NOT EXISTS corp_calendar (
+    symbol TEXT, company TEXT, event_date TEXT,
+    purpose TEXT, detail TEXT, kind TEXT, fetched_at TEXT,
+    PRIMARY KEY (symbol, event_date, purpose)
+);
+CREATE INDEX IF NOT EXISTS idx_corp_cal_date ON corp_calendar(event_date);
+
+-- Quarterly financial-results filings from NSE's corporates-financial-results
+-- API, enriched with headline numbers parsed best-effort from the filing XBRL
+-- (₹ Cr). revenue/pbt/pat are the current period; *_yoy are % change vs the
+-- same quarter a year earlier (null when the prior filing/XBRL is unavailable).
+-- Keyed by (symbol, period_end, consolidated) — a company files both a
+-- standalone and a consolidated result per quarter.
+CREATE TABLE IF NOT EXISTS corp_results (
+    symbol TEXT, company TEXT, period_end TEXT, period_start TEXT,
+    quarter TEXT, fy TEXT, consolidated TEXT, audited TEXT,
+    broadcast_date TEXT, xbrl_url TEXT,
+    revenue REAL, pbt REAL, pat REAL, income REAL,
+    revenue_yoy REAL, pat_yoy REAL, fetched_at TEXT,
+    PRIMARY KEY (symbol, period_end, consolidated)
+);
+CREATE INDEX IF NOT EXISTS idx_corp_res_symbol ON corp_results(symbol);
+CREATE INDEX IF NOT EXISTS idx_corp_res_bcast ON corp_results(broadcast_date);
 """
 
 
@@ -361,5 +404,59 @@ def store_indices(con, rows, date):
         return 0
     con.executemany(
         f"INSERT OR REPLACE INTO indices_daily (date,{','.join(cols)}) "
+        f"VALUES ({','.join('?' * (len(cols) + 1))})", payload)
+    return len(payload)
+
+
+def store_corp_announcements(con, rows):
+    """rows = [{seq_id, symbol, company, industry, an_dt, headline, detail,
+    category, polarity, attachment, has_xbrl}]. Idempotent upsert by seq_id."""
+    import datetime as _dt
+    now = _dt.datetime.now().isoformat(timespec="seconds")
+    cols = ["seq_id", "symbol", "company", "industry", "an_dt", "headline",
+            "detail", "category", "polarity", "attachment", "has_xbrl"]
+    payload = [[r.get(c) for c in cols] + [now]
+               for r in rows if r.get("seq_id") and r.get("symbol")]
+    if not payload:
+        return 0
+    con.executemany(
+        f"INSERT OR REPLACE INTO corp_announcements ({','.join(cols)},fetched_at) "
+        f"VALUES ({','.join('?' * (len(cols) + 1))})", payload)
+    return len(payload)
+
+
+def store_corp_calendar(con, rows):
+    """rows = [{symbol, company, event_date, purpose, detail, kind}]. Full
+    rebuild — the upcoming set rolls forward, so we clear and repopulate."""
+    import datetime as _dt
+    now = _dt.datetime.now().isoformat(timespec="seconds")
+    con.execute("DELETE FROM corp_calendar")
+    cols = ["symbol", "company", "event_date", "purpose", "detail", "kind"]
+    payload = [[r.get(c) for c in cols] + [now]
+               for r in rows if r.get("symbol") and r.get("event_date")]
+    if not payload:
+        return 0
+    con.executemany(
+        f"INSERT OR REPLACE INTO corp_calendar ({','.join(cols)},fetched_at) "
+        f"VALUES ({','.join('?' * (len(cols) + 1))})", payload)
+    return len(payload)
+
+
+def store_corp_results(con, rows):
+    """rows = [{symbol, company, period_end, period_start, quarter, fy,
+    consolidated, audited, broadcast_date, xbrl_url, revenue, pbt, pat, income,
+    revenue_yoy, pat_yoy}]. Idempotent upsert by (symbol, period_end,
+    consolidated)."""
+    import datetime as _dt
+    now = _dt.datetime.now().isoformat(timespec="seconds")
+    cols = ["symbol", "company", "period_end", "period_start", "quarter", "fy",
+            "consolidated", "audited", "broadcast_date", "xbrl_url",
+            "revenue", "pbt", "pat", "income", "revenue_yoy", "pat_yoy"]
+    payload = [[r.get(c) for c in cols] + [now]
+               for r in rows if r.get("symbol") and r.get("period_end")]
+    if not payload:
+        return 0
+    con.executemany(
+        f"INSERT OR REPLACE INTO corp_results ({','.join(cols)},fetched_at) "
         f"VALUES ({','.join('?' * (len(cols) + 1))})", payload)
     return len(payload)

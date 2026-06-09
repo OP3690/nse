@@ -49,6 +49,19 @@ EQUITY_MASTER_URL = ARCHIVES + "/content/equities/EQUITY_L.csv"
 # All indices snapshot (broad + sector indices + India VIX), JSON. "Current".
 ALLINDICES_API = BASE + "/api/allIndices"
 
+# --- Corporate disclosure APIs (JSON). All sit behind the same Akamai wall as
+# the other /api endpoints, so they reuse the warmed session + Referer header. ---
+# Corporate announcements (filings: order wins, fundraises, board changes, ratings,
+# concall/transcript intimations, etc). Optional from_date/to_date (DD-MM-YYYY) give
+# a dated window across the whole equity universe; &symbol= filters to one stock.
+CORP_ANNOUNCE_API = BASE + "/api/corporate-announcements?index=equities"
+# Forward board-meeting calendar: upcoming results/dividend/buyback/split intimations
+# with the stated purpose. This is the only forward-looking "event is coming" feed.
+EVENT_CALENDAR_API = BASE + "/api/event-calendar"
+# Quarterly financial-results filings (who filed, when, audited flag, XBRL link). The
+# headline numbers live in the XBRL XML, fetched separately and parsed best-effort.
+FIN_RESULTS_API = BASE + "/api/corporates-financial-results?index=equities&period=Quarterly"
+
 # FII/DII activity is a JSON API, not an archive file.
 FIIDII_API = BASE + "/api/fiidiiTradeReact"
 
@@ -166,6 +179,68 @@ class NSEClient:
 
     def all_indices(self):
         return self.get_json(ALLINDICES_API).get("data", [])
+
+    # --- Corporate disclosures --------------------------------------------
+    def corp_announcements(self, frm: str | None = None, to: str | None = None) -> list[dict]:
+        """Corporate announcements. With no dates → the ~20 latest market-wide;
+        with frm/to ('DD-MM-YYYY') → every equity filing in that window. Returns
+        [] on failure (the daily run just skips the refresh)."""
+        url = CORP_ANNOUNCE_API
+        if frm and to:
+            url += f"&from_date={frm}&to_date={to}"
+        try:
+            data = self.get_json(url)
+        except Exception:  # noqa: BLE001
+            return []
+        return data if isinstance(data, list) else []
+
+    def event_calendar(self) -> list[dict]:
+        """Upcoming board-meeting calendar: [{symbol, company, purpose, bm_desc,
+        date}]. Returns [] on failure."""
+        try:
+            data = self.get_json(EVENT_CALENDAR_API)
+        except Exception:  # noqa: BLE001
+            return []
+        return data if isinstance(data, list) else []
+
+    def fin_results(self, fys: list[int] | None = None) -> list[dict]:
+        """Quarterly financial-results filings across the universe (filing
+        metadata + XBRL link, not the numbers). The bare endpoint is flaky — it
+        intermittently returns a tiny default slice — so we query explicit
+        financial years (FY label = ending calendar year) and merge, deduped by
+        seqNumber. `fys` defaults to the current and previous Indian FY. Returns
+        [] only if every query fails."""
+        if fys is None:
+            import datetime as _dt
+            t = _dt.date.today()
+            fy_end = t.year + 1 if t.month >= 4 else t.year  # Apr-Mar FY label
+            fys = [fy_end, fy_end - 1]
+        merged: dict[str, dict] = {}
+        for fy in fys:
+            try:
+                data = self.get_json(f"{FIN_RESULTS_API}&fy={fy}")
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(data, list):
+                for r in data:
+                    key = str(r.get("seqNumber") or r.get("seqId") or id(r))
+                    merged[key] = r
+        if not merged:  # last resort: the bare (flaky) endpoint
+            try:
+                data = self.get_json(FIN_RESULTS_API)
+                if isinstance(data, list):
+                    return data
+            except Exception:  # noqa: BLE001
+                pass
+        return list(merged.values())
+
+    def get_text(self, url: str) -> str | None:
+        """Fetch a text/XML resource (e.g. results XBRL) through the warmed
+        session. Returns None on failure rather than raising."""
+        try:
+            return self.get_bytes(url).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            return None
 
     def bse_sensex(self) -> dict | None:
         """BSE Sensex headline quote: {last, pct, change}. NSE's feed has no

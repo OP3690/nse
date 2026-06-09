@@ -142,6 +142,24 @@ export const HELP = {
     ],
     source: "NSE EOD bhavcopy + sector map",
   },
+  "dash.earnings_radar": {
+    title: "Earnings Radar",
+    window: "Forward calendar + 30-day filings",
+    windowLong: "Upcoming board meetings from NSE's event calendar, plus events disclosed in the last 30 days.",
+    what: "A flag strip of corporate events on the horizon and how recent reporters were received — ranked by each stock's pre-event accumulation setup.",
+    how: [
+      "Events soon: upcoming board meetings / results, ranked by the 0-100 setup score (accumulation quality before the event).",
+      "Reported well: names whose recent filing landed with a constructive market reaction (and/or strong YoY where parsed).",
+      "Soft / adverse: recent adverse filings (pledge, rating cut, litigation…) or a weak post-event reaction.",
+      "The number on each row is the setup score; the word is the event kind or post-event verdict.",
+    ],
+    benchmarks: [
+      { label: "Setup ≥ 70", note: "strong accumulation into the event", tone: "up" },
+      { label: "Delivered strong", note: "good numbers + positive reaction", tone: "up" },
+      { label: "Disappointed", note: "soft reaction / adverse news", tone: "down" },
+    ],
+    source: "NSE corporate-announcements + event-calendar + results (XBRL); setup from the screener signals",
+  },
   "sectors.overview": {
     title: "Sector Analytics",
     window: "Today · 1M · 3M · 6M · 1Y",
@@ -527,6 +545,24 @@ export const HELP = {
     ],
     source: "Computed from the latest session's screener rows",
   },
+  "screener.earnings": {
+    title: "Earnings & Events",
+    window: "Forward calendar + 30-day filings",
+    windowLong: "Upcoming board meetings from NSE's event calendar, plus the last 30 days of disclosed events and each symbol's latest reported quarter.",
+    what: "Upcoming corporate events ranked by the stock's pre-event accumulation setup, plus a read on how names that just reported were received.",
+    how: [
+      "Setup (0-100): a transparent blend of the smart-money score, the cross-sectional model composite, its 20-day up-probability and the trend score — then tilted for delivery surge and F&O posture. It measures accumulation quality before an event, not the outcome.",
+      "Lean: the model's 20-day up-probability nudged toward the setup, labelled (leans positive / balanced / cautious). An estimate, explicitly not a forecast.",
+      "Verdict: for recent reporters, combines YoY revenue/PAT (where the filing's XBRL carries a comparative) with the market reaction (smart-money score + 1-month move).",
+      "Upcoming list ranks the calendar by setup; the verdicts tab splits recent events into well-received vs soft/adverse.",
+    ],
+    benchmarks: [
+      { label: "Setup ≥ 70", note: "strong accumulation into the event", tone: "up" },
+      { label: "Setup 40-55", note: "neutral — no clear pre-event edge", tone: "muted" },
+      { label: "Setup < 40", note: "weak / distribution before the event", tone: "down" },
+    ],
+    source: "NSE corporate-announcements + event-calendar + results (XBRL numbers); setup from the per-stock screener signals",
+  },
 
   // ─────────────────────────── Market Pulse ───────────────────────────
   "pulse.breadth": {
@@ -822,6 +858,25 @@ export const HELP = {
   },
 
   // ─────────────────────────── Stock page ───────────────────────────
+  "stock.corp_summary": {
+    title: "Management & Financial Summary",
+    window: "Forward calendar + latest reported quarter",
+    windowLong: "The next scheduled board meeting, the most recent quarterly filing, and the last ~10 disclosed announcements.",
+    what: "A structured read of this stock's corporate disclosures — pre-event accumulation setup, a labelled model lean, the post-event verdict, the latest reported financials and an announcement timeline.",
+    how: [
+      "Setup (0-100): a transparent blend of the smart-money score, model composite, 20-day up-probability and trend score, tilted for delivery surge and F&O posture — accumulation quality before an event.",
+      "Lean: the 20-day up-probability nudged toward the setup, labelled. An estimate, not a forecast.",
+      "Verdict: YoY revenue/PAT (where the filing's XBRL carries a comparative) combined with the market reaction (score + 1-month move).",
+      "Financials: revenue / PBT / PAT / total income parsed best-effort from the filing's XBRL, in ₹ Cr.",
+      "Timeline: recent filings with a directional dot (green constructive / red adverse) and a link to the source PDF.",
+    ],
+    benchmarks: [
+      { label: "Setup ≥ 70", note: "strong accumulation into the event", tone: "up" },
+      { label: "Delivered strong", note: "good numbers + positive reaction", tone: "up" },
+      { label: "Disappointed", note: "soft reaction / adverse news", tone: "down" },
+    ],
+    source: "NSE/BSE corporate-announcements + event-calendar + results (XBRL); setup from the per-stock signals",
+  },
   "stock.quant_model": {
     title: "Quant Model",
     window: "Cross-sectional",

@@ -4,6 +4,7 @@ import { FiiDiiChart } from "./components/charts";
 import MoneyFlow from "./components/MoneyFlow";
 import MoversBoard from "./components/MoversBoard";
 import MarketBrief from "./components/MarketBrief";
+import EarningsRadar from "./components/EarningsRadar";
 import IndexTicker from "./components/IndexTicker";
 
 export const dynamic = "force-dynamic";
@@ -231,6 +232,9 @@ export default async function Dashboard() {
         <MarketBrief history={fiidii.history} brief={brief} asOf={d.date}
           pressure={analytics.pressure} net5={analytics.net5} net20={analytics.net20} />
       )}
+
+      {/* corporate-events radar (upcoming + recent verdicts) */}
+      {d.corp && <EarningsRadar corp={d.corp} />}
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* FII/DII chart */}
