@@ -609,10 +609,24 @@ export default function SectorsView({ analytics, stocks }) {
             </div>
           </div>
           <SectorBoxPlot rows={boxData.rows} domMin={boxData.domMin} domMax={boxData.domMax} onSelect={setSelected} selected={sel} />
-          <div className="flex justify-between text-[10px] text-muted font-mono tabular-nums pt-0.5 border-t border-line/50">
-            <span>{boxData.domMin.toFixed(0)}%</span>
-            <span className="text-muted/60">0%</span>
-            <span>+{boxData.domMax.toFixed(0)}%</span>
+          <div className="pt-1 border-t border-line/50">
+            <div className="flex justify-between items-baseline">
+              <span className="flex flex-col items-start leading-tight">
+                <span className="text-[10px] font-mono tabular-nums text-down">{boxData.domMin.toFixed(0)}%</span>
+                <span className="text-[9px] uppercase tracking-wide text-muted/70">biggest loss</span>
+              </span>
+              <span className="flex flex-col items-center leading-tight">
+                <span className="text-[10px] font-mono tabular-nums text-muted/60">0%</span>
+                <span className="text-[9px] uppercase tracking-wide text-muted/70">no change</span>
+              </span>
+              <span className="flex flex-col items-end leading-tight">
+                <span className="text-[10px] font-mono tabular-nums text-up">+{boxData.domMax.toFixed(0)}%</span>
+                <span className="text-[9px] uppercase tracking-wide text-muted/70">biggest gain</span>
+              </span>
+            </div>
+            <div className="mt-1 text-center text-[10px] text-muted/80">
+              Each row spans its sector’s {tfLabel} stock returns — further right means stronger.
+            </div>
           </div>
         </section>
       )}
