@@ -599,7 +599,7 @@ def build(con) -> dict:
         entry = {
             "symbol": sym,
             "company": names.get(sym),
-            "sector": sec_map.get(sym) or bse_sec.get(sym),
+            "sector": sec_map.get(sym),  # sec_map already merged with BSE fallback
             "close": r["close"],
             "pct_change": pct,
             "deliv_pct": r["deliv_pct"],
@@ -624,7 +624,7 @@ def build(con) -> dict:
         screener.append(entry)
 
         # sector aggregation (turnover-weighted)
-        sec = sec_map.get(sym) or bse_sec.get(sym)
+        sec = sec_map.get(sym)  # sec_map already merged with BSE fallback
         if sec and pct is not None:
             sa = sector_agg.setdefault(sec, {
                 "sector": sec, "turnover_cr": 0.0, "w_pct": 0.0,
