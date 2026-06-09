@@ -98,6 +98,24 @@ export const HELP = {
     ],
     source: "NSE EOD delivery bhavcopy",
   },
+  "dash.vix": {
+    title: "India VIX",
+    window: "Live / 1 session",
+    windowLong: "The current intraday value (or the latest EOD close when the market is shut).",
+    what: "The market's expected 30-day volatility — the 'fear gauge'. A higher VIX means traders are pricing in bigger swings ahead.",
+    how: [
+      "NSE computes it from the order-book of near- and next-month NIFTY index option prices (the Black-Scholes implied volatility, annualised).",
+      "It measures expected volatility, not direction — but spikes almost always coincide with sharp sell-offs, which is why it reads as a fear gauge.",
+      "Shown inverted on the ticker: a rising VIX is risk-off, so it's coloured red when up and green when down.",
+    ],
+    benchmarks: [
+      { label: "< 13", note: "complacent / calm — low hedging demand", tone: "up" },
+      { label: "13–18", note: "normal, range-bound volatility", tone: "muted" },
+      { label: "18–25", note: "elevated — nervy, larger swings expected", tone: "amber" },
+      { label: "> 25", note: "fear / stress — usually a falling market", tone: "down" },
+    ],
+    source: "NSE India VIX (allIndices feed)",
+  },
   "dash.fiidii_chart": {
     title: "FII / DII Activity",
     window: "Daily history",

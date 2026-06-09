@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import InfoDot from "./InfoDot";
+
+// Help topics for tiles that carry a "?" explainer (keyed by tile label).
+const TILE_HELP = { "India VIX": "dash.vix" };
 
 // Headline index tiles (Nifty 50, Sensex, India VIX) under the dashboard title.
 // Hydrates with the server snapshot, then polls /api/indices for live,
@@ -22,9 +26,13 @@ function Tile({ ix }) {
   // VIX is inverted — a rising VIX is risk-off, so colour it red when up.
   const good = ix.invert ? !up : up;
   const tone = ix.pct == null ? "text-muted" : good ? "text-up" : "text-down";
+  const help = TILE_HELP[ix.label];
   return (
     <div className="flex flex-col gap-0.5 px-4 py-2.5 transition hover:bg-panel2/70">
-      <span className="text-[10px] uppercase tracking-wider text-muted font-semibold">{ix.label}</span>
+      <span className="text-[10px] uppercase tracking-wider text-muted font-semibold flex items-center gap-1">
+        {ix.label}
+        {help && <InfoDot topic={help} hidePeriod className="ml-0.5" />}
+      </span>
       <span className="font-mono text-base font-bold text-white tabular-nums leading-tight">{fmt(ix.last, ix.decimals)}</span>
       <span className={`font-mono text-[11px] font-semibold tabular-nums ${tone}`}>
         {ix.pct == null ? "—" : (
