@@ -17,6 +17,7 @@ import indices_membership
 import intel
 import ipo
 import knn
+import manual_sectors
 import model
 import movers
 import mongo
@@ -529,6 +530,10 @@ def build(con) -> dict:
     # BSE ComHeader fallback for names outside NSE's Nifty-500 sector map.
     # setdefault → NSE's mapping always wins where it exists.
     for _sym, _sec in load_bse_sectors(con).items():
+        sec_map.setdefault(_sym, _sec)
+    # Hand-classified fallback for the last stragglers neither exchange covers.
+    # Lowest priority — only fills symbols still blank after NSE + BSE.
+    for _sym, _sec in manual_sectors.MANUAL_SECTORS.items():
         sec_map.setdefault(_sym, _sec)
     names = load_names(con)
     mktcap = load_marketcap(con)
