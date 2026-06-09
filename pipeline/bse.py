@@ -99,6 +99,49 @@ def enrich_free_float(client, rows: list[dict], priority: set[str], limit: int) 
     return filled
 
 
+def _sector_targets(con, nifty500_syms: set[str], limit: int) -> list[tuple[str, str]]:
+    """[(symbol, scripcode)] for symbols that still lack a sector — i.e. not in
+    NSE's Nifty-500 map and not already enriched in bse_sectors. Bounded by limit."""
+    have = {r["symbol"] for r in con.execute("SELECT symbol FROM bse_sectors")}
+    out = []
+    for r in con.execute(
+            "SELECT symbol, scripcode FROM bse_scrips WHERE scripcode IS NOT NULL"):
+        sym = r["symbol"]
+        if sym in nifty500_syms or sym in have:
+            continue
+        out.append((sym, r["scripcode"]))
+        if limit and len(out) >= limit:
+            break
+    return out
+
+
+def enrich_sectors(con, client, limit: int = 400) -> dict:
+    """Fetch BSE ComHeader (macro Sector + Industry) for symbols still missing a
+    sector, and store them. Incremental + idempotent: each call only fetches
+    symbols not yet in bse_sectors, so it fills over successive runs without
+    re-hitting BSE. Returns {fetched, stored}. Best-effort."""
+    try:
+        import sectors as _sec
+        nifty500 = set(_sec.load_map().keys())
+    except Exception:  # noqa: BLE001
+        nifty500 = set()
+    targets = _sector_targets(con, nifty500, limit)
+    rows, miss = [], 0
+    for sym, sc in targets:
+        data = client.bse_com_header(sc)
+        if not data:
+            miss += 1
+            continue
+        sector = (data.get("Sector") or "").strip() or None
+        industry = (data.get("Industry") or "").strip() or None
+        if sector or industry:
+            rows.append({"symbol": sym, "scripcode": sc,
+                         "sector": sector, "industry": industry})
+    stored = store.store_bse_sectors(con, rows)
+    con.commit()
+    return {"fetched": len(targets), "stored": stored, "miss": miss}
+
+
 def fetch_and_store(con, client, ff_limit: int = 0) -> dict:
     """Fetch the BSE scrip master, join to NSE symbols by ISIN, optionally enrich
     a bounded priority subset with free-float cap, and store. Returns a small
@@ -119,10 +162,28 @@ def fetch_and_store(con, client, ff_limit: int = 0) -> dict:
 if __name__ == "__main__":
     from nse_client import NSEClient
 
-    ff_limit = 0
-    if "--ff-limit" in sys.argv:
-        ff_limit = int(sys.argv[sys.argv.index("--ff-limit") + 1])
     con = store.connect()
-    summary = fetch_and_store(con, NSEClient(), ff_limit=ff_limit)
+    client = NSEClient()
+    # --sectors N : backfill macro Sector/Industry for up to N still-missing
+    # symbols (loops until exhausted when N is large). Otherwise fetch the
+    # market-cap master, optionally with --ff-limit free-float enrichment.
+    if "--sectors" in sys.argv:
+        limit = int(sys.argv[sys.argv.index("--sectors") + 1])
+        total = {"fetched": 0, "stored": 0, "miss": 0}
+        while True:
+            batch = enrich_sectors(con, client, limit=min(limit, 200) if limit else 200)
+            for k in total:
+                total[k] += batch[k]
+            print(f"  sectors: +{batch['stored']} stored "
+                  f"(fetched {batch['fetched']}, miss {batch['miss']}) "
+                  f"| running {total['stored']}")
+            if batch["fetched"] == 0 or (limit and total["fetched"] >= limit):
+                break
+        print(total)
+    else:
+        ff_limit = 0
+        if "--ff-limit" in sys.argv:
+            ff_limit = int(sys.argv[sys.argv.index("--ff-limit") + 1])
+        summary = fetch_and_store(con, client, ff_limit=ff_limit)
+        print(summary)
     con.close()
-    print(summary)

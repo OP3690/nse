@@ -134,6 +134,15 @@ CREATE TABLE IF NOT EXISTS bse_scrips (
 );
 CREATE INDEX IF NOT EXISTS idx_bse_scrips_code ON bse_scrips(scripcode);
 
+-- BSE-sourced macro sector + granular industry per symbol, from ComHeader
+-- (keyed by scrip code). NSE's free sector map only covers the Nifty 500, so
+-- this fills sectors for the ~1,700 symbols outside it. Persistent (NOT rebuilt
+-- each run) and fetched incrementally, since classification rarely changes.
+CREATE TABLE IF NOT EXISTS bse_sectors (
+    symbol TEXT PRIMARY KEY, scripcode TEXT,
+    sector TEXT, industry TEXT, fetched_at TEXT
+);
+
 -- Open / upcoming IPOs from NSE's all-upcoming-issues + ipo-current-issue APIs.
 -- sub_times = live subscription multiple (Total). Refreshed each run; the whole
 -- table is cleared and repopulated since the open set changes daily.
@@ -324,6 +333,21 @@ def store_bse_scrips(con, rows):
     con.executemany(
         f"INSERT OR REPLACE INTO bse_scrips ({','.join(cols)}) "
         f"VALUES ({','.join('?' * len(cols))})", payload)
+    return len(payload)
+
+
+def store_bse_sectors(con, rows):
+    """rows = [{symbol, scripcode, sector, industry}]. Idempotent upsert (NOT a
+    rebuild — this table accumulates as we enrich symbols over successive runs)."""
+    import datetime as _dt
+    now = _dt.datetime.now().isoformat(timespec="seconds")
+    payload = [[r["symbol"], r.get("scripcode"), r.get("sector"), r.get("industry"), now]
+               for r in rows if r.get("symbol") and (r.get("sector") or r.get("industry"))]
+    if not payload:
+        return 0
+    con.executemany(
+        "INSERT OR REPLACE INTO bse_sectors (symbol,scripcode,sector,industry,fetched_at) "
+        "VALUES (?,?,?,?,?)", payload)
     return len(payload)
 
 

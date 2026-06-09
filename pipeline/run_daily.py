@@ -66,11 +66,18 @@ def _refresh_bse_marketcap(session_date: dt.date) -> None:
         import bse
         import store
         ff_limit = 600 if session_date.weekday() == 4 else 0  # free-float on Fridays
+        client = NSEClient()
         con = store.connect()
-        summary = bse.fetch_and_store(con, NSEClient(), ff_limit=ff_limit)
-        con.close()
+        summary = bse.fetch_and_store(con, client, ff_limit=ff_limit)
         print(f"  BSE market cap: matched {summary.get('matched', 0)} "
               f"of {summary.get('master', 0)} scrips, free-float {summary.get('ff', 0)}")
+        # Incrementally backfill macro Sector/Industry for symbols still missing
+        # one (those outside NSE's Nifty-500 map). Idempotent + bounded per run,
+        # so it fills over successive days without re-hitting BSE for known names.
+        sec = bse.enrich_sectors(con, client, limit=300)
+        print(f"  BSE sectors: +{sec.get('stored', 0)} stored "
+              f"(fetched {sec.get('fetched', 0)}, miss {sec.get('miss', 0)})")
+        con.close()
     except Exception as e:  # noqa: BLE001
         print(f"  BSE market cap refresh skipped: {e!r}")
 

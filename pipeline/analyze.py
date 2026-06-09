@@ -227,6 +227,19 @@ def build_shareholding_block(rows: list[dict], close: float | None) -> dict | No
             "total_shares": shares, "categories": cats, "trend": trend}
 
 
+def load_bse_sectors(con) -> dict[str, str]:
+    """Symbol -> macro sector from BSE's ComHeader enrichment. Fills sectors for
+    symbols outside NSE's Nifty-500-only map. Empty if the table doesn't exist."""
+    out: dict[str, str] = {}
+    try:
+        cur = con.execute("SELECT symbol, sector FROM bse_sectors WHERE sector IS NOT NULL")
+    except Exception:  # noqa: BLE001 — table may not exist on old DBs
+        return out
+    for r in cur:
+        out[r["symbol"]] = r["sector"]
+    return out
+
+
 def load_marketcap(con) -> dict[str, dict]:
     """Symbol -> {mktcap_cr, mktcap_ff_cr, scripcode}, from BSE's scrip master
     joined by ISIN. Empty if the table doesn't exist yet (pre-first-fetch)."""
@@ -513,6 +526,10 @@ def build(con) -> dict:
         raise RuntimeError("No delivery data in DB. Run download + ingest first.")
 
     sec_map = sectors.load_map()
+    # BSE ComHeader fallback for names outside NSE's Nifty-500 sector map.
+    # setdefault → NSE's mapping always wins where it exists.
+    for _sym, _sec in load_bse_sectors(con).items():
+        sec_map.setdefault(_sym, _sec)
     names = load_names(con)
     mktcap = load_marketcap(con)
     membership = indices_membership.load_maps(con)
@@ -582,7 +599,7 @@ def build(con) -> dict:
         entry = {
             "symbol": sym,
             "company": names.get(sym),
-            "sector": sec_map.get(sym),
+            "sector": sec_map.get(sym) or bse_sec.get(sym),
             "close": r["close"],
             "pct_change": pct,
             "deliv_pct": r["deliv_pct"],
@@ -607,7 +624,7 @@ def build(con) -> dict:
         screener.append(entry)
 
         # sector aggregation (turnover-weighted)
-        sec = sec_map.get(sym)
+        sec = sec_map.get(sym) or bse_sec.get(sym)
         if sec and pct is not None:
             sa = sector_agg.setdefault(sec, {
                 "sector": sec, "turnover_cr": 0.0, "w_pct": 0.0,

@@ -79,6 +79,10 @@ BSE_SCRIP_MASTER = ("https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w"
 # subset where free-float (index-weight-relevant) market cap matters.
 BSE_STOCK_TRADING = ("https://api.bseindia.com/BseIndiaAPI/api/StockTrading/w"
                      "?flag=&quotetype=EQ&scripcode={sc}")
+# Per-scrip company header: macro Sector + granular Industry classification.
+# Fills sectors for symbols outside NSE's Nifty-500-only free sector map.
+BSE_COM_HEADER = ("https://api.bseindia.com/BseIndiaAPI/api/ComHeader/w"
+                  "?quotetype=EQ&scripcode={sc}&seriesid=")
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=1d&interval=1d"
 
 
@@ -225,6 +229,17 @@ class NSEClient:
             except Exception:  # noqa: BLE001
                 continue
         return []
+
+    def bse_com_header(self, scripcode: str) -> dict | None:
+        """BSE company header for a scrip: carries macro Sector + granular
+        Industry + ISIN/group. Returns the raw JSON dict, or None on failure."""
+        headers = {"Referer": BSE_HOME, "Accept": "application/json, text/plain, */*"}
+        try:
+            r = self.s.get(BSE_COM_HEADER.format(sc=scripcode), headers=headers, timeout=20)
+            data = r.json()
+            return data if isinstance(data, dict) and data else None
+        except Exception:  # noqa: BLE001
+            return None
 
     def bse_stock_trading(self, scripcode: str) -> dict | None:
         """Per-scrip trading detail incl. full + free-float market cap. Returns
