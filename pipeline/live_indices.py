@@ -33,7 +33,8 @@ def quotes() -> list[dict]:
     try:
         sx = client.bse_sensex()
         if sx:
-            rows.append({"index": "SENSEX", "last": sx["last"], "pct": sx["pct"]})
+            rows.append({"index": "SENSEX", "last": sx["last"], "pct": sx["pct"],
+                         "change": sx.get("change")})
     except Exception:  # noqa: BLE001
         pass
     return headline_indices(rows)

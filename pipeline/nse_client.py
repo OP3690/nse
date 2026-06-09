@@ -61,9 +61,13 @@ NSDL_FPI_URL = "https://www.fpi.nsdl.co.in/web/Reports/Latest.aspx"
 # recent window; figures match NSE. Third-party site, no warmup needed.
 MC_FIIDII_URL = "https://www.moneycontrol.com/markets/fii-dii-data/cash/"
 
-# BSE Sensex isn't on NSE's allIndices feed (it's a BSE index). Yahoo Finance's
-# chart API carries ^BSESN reliably server-side — used only for the headline tile.
-YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=5d&interval=1d"
+# BSE Sensex isn't on NSE's allIndices feed (it's a BSE index). BSE's own API is
+# the authoritative source (LTP + change + %chg, exchange-official); index 16 is
+# the S&P BSE SENSEX. Yahoo ^BSESN is kept as a fallback only — its
+# chartPreviousClose can be wrong, yielding a spurious % change.
+BSE_INDEX_API = "https://api.bseindia.com/BseIndiaAPI/api/IndexMovers/w?index=16"
+BSE_HOME = "https://www.bseindia.com/"
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=1d&interval=1d"
 
 
 class NSEClient:
@@ -148,9 +152,36 @@ class NSEClient:
         return self.get_json(ALLINDICES_API).get("data", [])
 
     def bse_sensex(self) -> dict | None:
-        """BSE Sensex headline quote via Yahoo (^BSESN): {last, pct}. NSE's feed
-        has no Sensex, so this is the one cross-source for the headline tile.
-        Returns None on any failure (the tile just hides)."""
+        """BSE Sensex headline quote: {last, pct, change}. NSE's feed has no
+        Sensex, so we go straight to BSE's own API (exchange-authoritative LTP +
+        change + %chg), with Yahoo ^BSESN as a fallback. Returns None only if
+        both fail (the tile just hides)."""
+        return self._bse_sensex_official() or self._bse_sensex_yahoo()
+
+    def _bse_sensex_official(self) -> dict | None:
+        """BSE's own IndexMovers API (index 16 = S&P BSE SENSEX). curl_cffi's
+        Chrome impersonation clears BSE's bot wall; a homepage hit seeds cookies."""
+        headers = {"Referer": BSE_HOME, "Accept": "application/json, text/plain, */*"}
+        for attempt in range(2):
+            try:
+                if attempt:  # second try: warm cookies on the BSE homepage first
+                    self.s.get(BSE_HOME, timeout=15)
+                r = self.s.get(BSE_INDEX_API, headers=headers, timeout=20)
+                row = (r.json() or {}).get("Table", [None])[0]
+                if not row or row.get("LTP") is None:
+                    continue
+                return {
+                    "last": round(float(row["LTP"]), 2),
+                    "pct": round(float(row["PERCENTCHG"]), 2) if row.get("PERCENTCHG") is not None else None,
+                    "change": round(float(row["change"]), 2) if row.get("change") is not None else None,
+                }
+            except Exception:  # noqa: BLE001 (bad JSON / HTML error page / network)
+                continue
+        return None
+
+    def _bse_sensex_yahoo(self) -> dict | None:
+        """Fallback only — Yahoo ^BSESN. chartPreviousClose can be stale/wrong,
+        so this is used solely when BSE's own API is unreachable."""
         url = YAHOO_CHART_URL.format(sym="%5EBSESN")
         try:
             r = self.s.get(url, timeout=20)
@@ -160,7 +191,8 @@ class NSEClient:
             prev = meta.get("chartPreviousClose") or meta.get("previousClose")
             if last is None or not prev:
                 return None
-            return {"last": round(last, 2), "pct": round((last - prev) / prev * 100, 2)}
+            return {"last": round(last, 2), "pct": round((last - prev) / prev * 100, 2),
+                    "change": round(last - prev, 2)}
         except Exception:  # noqa: BLE001
             return None
 

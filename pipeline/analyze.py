@@ -272,10 +272,10 @@ def headline_indices(idx_rows: list[dict]) -> list[dict]:
         if r and r.get("last") is not None:
             last = r["last"]
             pct = r.get("pct")
-            # NSE stores only last + % change, so derive the absolute point move:
-            # prev = last / (1 + pct/100); change = last - prev.
-            change = None
-            if pct is not None and (100 + pct) != 0:
+            # Prefer an exchange-supplied exact point move (e.g. BSE's `change`);
+            # otherwise derive it: prev = last / (1 + pct/100); change = last - prev.
+            change = r.get("change")
+            if change is None and pct is not None and (100 + pct) != 0:
                 change = round(last - last / (1 + pct / 100), 2)
             out.append({
                 "label": label, "last": last, "pct": pct, "change": change,
