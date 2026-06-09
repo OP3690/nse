@@ -8,6 +8,22 @@ import InfoDot from "../../components/InfoDot";
 
 export const dynamic = "force-dynamic";
 
+// Market cap is stored in ₹ Crore. Indian convention: show ≥1 lakh-Cr as
+// "₹X.XX L Cr", smaller as a grouped "₹X,XXX Cr".
+function fmtMktcap(cr) {
+  if (cr == null) return null;
+  if (cr >= 100000) return `₹${(cr / 100000).toFixed(2)} L Cr`;
+  return `₹${Math.round(cr).toLocaleString("en-IN")} Cr`;
+}
+
+const SIZE_TONE = {
+  Mega: "bg-accent/15 text-accent",
+  Large: "bg-up/15 text-up",
+  Mid: "bg-accent/10 text-accent/90",
+  Small: "bg-muted/15 text-muted",
+  Micro: "bg-muted/10 text-muted/80",
+};
+
 // 52-week range bar: low → high with a marker at the current price.
 function Wk52Range({ high, low, close, pos }) {
   if (high == null || low == null || close == null || high <= low) return null;
@@ -69,6 +85,22 @@ export default async function StockPage({ params }) {
             </div>
             {m.company && <p className="text-white/90 text-base font-medium mt-1">{m.company}</p>}
             <p className="text-muted text-sm mt-0.5">{m.sector || "Sector: n/a"}</p>
+            {m.mktcap_cr != null && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-muted text-xs uppercase tracking-wide inline-flex items-center gap-1">Mkt Cap <InfoDot topic="stock.marketcap" /></span>
+                <span className="font-mono text-sm font-semibold text-white tabular-nums">{fmtMktcap(m.mktcap_cr)}</span>
+                {m.size_tier && (
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${SIZE_TONE[m.size_tier] || "bg-muted/15 text-muted"}`}>
+                    {m.size_tier} Cap
+                  </span>
+                )}
+                {m.mktcap_ff_cr != null && (
+                  <span className="text-[11px] text-muted" title="Free-float market cap (excludes promoter / locked holding)">
+                    · FF {fmtMktcap(m.mktcap_ff_cr)}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="text-right min-w-[240px]">
             <div className="text-xs text-muted uppercase tracking-wide">Current Price</div>

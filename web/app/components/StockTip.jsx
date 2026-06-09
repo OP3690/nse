@@ -36,6 +36,13 @@ function fmtINR(n) {
   return n == null ? "—" : Number(n).toLocaleString("en-IN");
 }
 
+// Market cap is in ₹ Crore; show ≥1 lakh-Cr compactly.
+function fmtMktcap(cr) {
+  if (cr == null) return null;
+  if (cr >= 100000) return `₹${(cr / 100000).toFixed(2)} L Cr`;
+  return `₹${Math.round(cr).toLocaleString("en-IN")} Cr`;
+}
+
 // Tiny volume sparkline. values are 0..100 (already normalised by the pipeline).
 function Spark({ values, up }) {
   if (!values || values.length < 2) return null;
@@ -121,6 +128,15 @@ function Card({ tip, symbol, name }) {
           )}
           {t.sector && <span className="text-[10px] text-muted truncate max-w-[150px]">{t.sector}</span>}
         </div>
+        {t.mktcap_cr != null && (
+          <div className="flex items-center justify-between mt-1.5 text-[10px]">
+            <span className="text-muted/70 uppercase tracking-wide">Mkt Cap</span>
+            <span className="font-mono text-white/90">
+              {fmtMktcap(t.mktcap_cr)}
+              {t.size_tier && <span className="text-muted ml-1">· {t.size_tier}</span>}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="px-3.5 py-2.5 space-y-2.5 border-t border-line/60">

@@ -227,6 +227,39 @@ def build_shareholding_block(rows: list[dict], close: float | None) -> dict | No
             "total_shares": shares, "categories": cats, "trend": trend}
 
 
+def load_marketcap(con) -> dict[str, dict]:
+    """Symbol -> {mktcap_cr, mktcap_ff_cr, scripcode}, from BSE's scrip master
+    joined by ISIN. Empty if the table doesn't exist yet (pre-first-fetch)."""
+    out: dict[str, dict] = {}
+    try:
+        cur = con.execute(
+            "SELECT symbol, scripcode, mktcap_cr, mktcap_ff_cr FROM bse_scrips")
+    except Exception:  # noqa: BLE001 — table may not exist on old DBs
+        return out
+    for r in cur:
+        out[r["symbol"]] = {"mktcap_cr": r["mktcap_cr"],
+                            "mktcap_ff_cr": r["mktcap_ff_cr"],
+                            "scripcode": r["scripcode"]}
+    return out
+
+
+# SEBI-style size buckets by full market cap (₹ Cr). Used as a market-cap-based
+# size label that complements the index-membership cap_tier (which only covers
+# index members). Thresholds approximate the large/mid/small/micro split.
+def marketcap_tier(mktcap_cr: float | None) -> str | None:
+    if not mktcap_cr:
+        return None
+    if mktcap_cr >= 50_000:
+        return "Mega"
+    if mktcap_cr >= 20_000:
+        return "Large"
+    if mktcap_cr >= 5_000:
+        return "Mid"
+    if mktcap_cr >= 500:
+        return "Small"
+    return "Micro"
+
+
 def load_names(con) -> dict[str, str]:
     """Symbol -> company name. Equity master is the primary source; IPO issues
     and bulk/block deal security names backfill anything the master misses."""
@@ -448,6 +481,8 @@ def build_tooltips(headline, histories) -> dict:
             "close": e.get("close"),
             "pct_change": e.get("pct_change"),
             "cap_tier": e.get("cap_tier"),
+            "mktcap_cr": e.get("mktcap_cr"),
+            "size_tier": e.get("size_tier"),
             "indices": e.get("indices") or [],
             "wk_high": e.get("wk_high"),
             "wk_low": e.get("wk_low"),
@@ -479,6 +514,7 @@ def build(con) -> dict:
 
     sec_map = sectors.load_map()
     names = load_names(con)
+    mktcap = load_marketcap(con)
     membership = indices_membership.load_maps(con)
     mem_by_sym = membership["per_symbol"]
     baselines = rolling_baselines(con, date)
@@ -541,6 +577,8 @@ def build(con) -> dict:
 
         liquid = turn >= MIN_TURNOVER_LACS
         mem = mem_by_sym.get(sym, {})
+        mc = mktcap.get(sym, {})
+        mc_full = mc.get("mktcap_cr")
         entry = {
             "symbol": sym,
             "company": names.get(sym),
@@ -558,6 +596,10 @@ def build(con) -> dict:
             "score": score,
             "signal": _signal_label(score, pct),
             "liquid": liquid,
+            # --- market cap (₹ Cr, BSE-sourced via ISIN) + size bucket ---
+            "mktcap_cr": mc_full,
+            "mktcap_ff_cr": mc.get("mktcap_ff_cr"),
+            "size_tier": marketcap_tier(mc_full),
             # --- index membership + size class (for the rich hover-card) ---
             "cap_tier": mem.get("cap_tier"),
             "indices": mem.get("indices") or [],

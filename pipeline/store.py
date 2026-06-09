@@ -122,6 +122,18 @@ CREATE TABLE IF NOT EXISTS shareholding_quarterly (
 );
 CREATE INDEX IF NOT EXISTS idx_shp_symbol ON shareholding_quarterly(symbol);
 
+-- BSE-sourced market cap + scrip identity per NSE symbol, joined by ISIN.
+-- mktcap_cr is full market cap (₹ Cr) from BSE's scrip master (whole universe in
+-- one call); mktcap_ff_cr is free-float market cap (₹ Cr), filled only for the
+-- subset we fetch per-scrip (e.g. Nifty 500). Refreshed each run (full rebuild).
+CREATE TABLE IF NOT EXISTS bse_scrips (
+    symbol TEXT PRIMARY KEY, scripcode TEXT, isin TEXT, bse_symbol TEXT,
+    "group" TEXT, face_value REAL,
+    mktcap_cr REAL, mktcap_ff_cr REAL,
+    fetched_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_bse_scrips_code ON bse_scrips(scripcode);
+
 -- Open / upcoming IPOs from NSE's all-upcoming-issues + ipo-current-issue APIs.
 -- sub_times = live subscription multiple (Total). Refreshed each run; the whole
 -- table is cleared and repopulated since the open set changes daily.
@@ -293,6 +305,24 @@ def store_shareholding(con, rows):
         return 0
     con.executemany(
         f"INSERT OR REPLACE INTO shareholding_quarterly ({','.join(cols)}) "
+        f"VALUES ({','.join('?' * len(cols))})", payload)
+    return len(payload)
+
+
+def store_bse_scrips(con, rows):
+    """rows = [{symbol, scripcode, isin, bse_symbol, group, face_value,
+    mktcap_cr, mktcap_ff_cr}]. Full rebuild: clears then inserts (the master is
+    re-fetched whole each run). Keyed by NSE symbol."""
+    con.execute("DELETE FROM bse_scrips")
+    cols = ["symbol", "scripcode", "isin", "bse_symbol", '"group"', "face_value",
+            "mktcap_cr", "mktcap_ff_cr", "fetched_at"]
+    keys = ["symbol", "scripcode", "isin", "bse_symbol", "group", "face_value",
+            "mktcap_cr", "mktcap_ff_cr", "fetched_at"]
+    payload = [[r.get(k) for k in keys] for r in rows if r.get("symbol")]
+    if not payload:
+        return 0
+    con.executemany(
+        f"INSERT OR REPLACE INTO bse_scrips ({','.join(cols)}) "
         f"VALUES ({','.join('?' * len(cols))})", payload)
     return len(payload)
 

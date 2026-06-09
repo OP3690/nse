@@ -67,6 +67,18 @@ MC_FIIDII_URL = "https://www.moneycontrol.com/markets/fii-dii-data/cash/"
 # chartPreviousClose can be wrong, yielding a spurious % change.
 BSE_INDEX_API = "https://api.bseindia.com/BseIndiaAPI/api/IndexMovers/w?index=16"
 BSE_HOME = "https://www.bseindia.com/"
+
+# BSE active-equity scrip master (one call → every listed scrip with SCRIP_CD,
+# ticker, ISIN, group, face value and full market cap in ₹ Cr). The cross-exchange
+# join key is ISIN, which our `securities` table already carries from NSE. This is
+# how we attach market cap to the whole NSE universe without per-stock requests.
+BSE_SCRIP_MASTER = ("https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w"
+                    "?Group=&Scripcode=&industry=&segment=Equity&status=Active")
+# Per-scrip trading detail: full + free-float market cap, WAP, turnover, TTQ,
+# 2-week avg qty, circuit limits. {sc} = BSE scrip code. Used for the Nifty-500
+# subset where free-float (index-weight-relevant) market cap matters.
+BSE_STOCK_TRADING = ("https://api.bseindia.com/BseIndiaAPI/api/StockTrading/w"
+                     "?flag=&quotetype=EQ&scripcode={sc}")
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=1d&interval=1d"
 
 
@@ -193,6 +205,35 @@ class NSEClient:
                 return None
             return {"last": round(last, 2), "pct": round((last - prev) / prev * 100, 2),
                     "change": round(last - prev, 2)}
+        except Exception:  # noqa: BLE001
+            return None
+
+    def bse_scrip_master(self) -> list[dict]:
+        """BSE active-equity scrip master (whole listed universe in one call).
+        Each row: {SCRIP_CD, scrip_id, ISIN_NUMBER, GROUP, FACE_VALUE, Mktcap,
+        Scrip_Name, Issuer_Name, ...}. Mktcap is full market cap in ₹ Cr. Returns
+        [] on failure (the caller just skips the market-cap enrichment)."""
+        headers = {"Referer": BSE_HOME, "Accept": "application/json, text/plain, */*"}
+        for attempt in range(2):
+            try:
+                if attempt:
+                    self.s.get(BSE_HOME, timeout=15)
+                r = self.s.get(BSE_SCRIP_MASTER, headers=headers, timeout=30)
+                data = r.json()
+                if isinstance(data, list) and data:
+                    return data
+            except Exception:  # noqa: BLE001
+                continue
+        return []
+
+    def bse_stock_trading(self, scripcode: str) -> dict | None:
+        """Per-scrip trading detail incl. full + free-float market cap. Returns
+        the raw JSON dict, or None on failure / empty."""
+        headers = {"Referer": BSE_HOME, "Accept": "application/json, text/plain, */*"}
+        try:
+            r = self.s.get(BSE_STOCK_TRADING.format(sc=scripcode), headers=headers, timeout=20)
+            data = r.json()
+            return data if isinstance(data, dict) and data else None
         except Exception:  # noqa: BLE001
             return None
 

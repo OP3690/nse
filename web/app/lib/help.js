@@ -780,6 +780,24 @@ export const HELP = {
     ],
     source: "NSE quarterly shareholding-pattern filings (XBRL)",
   },
+  "stock.marketcap": {
+    title: "Market Capitalisation",
+    window: "Current",
+    windowLong: "Latest market cap from BSE's scrip master, refreshed each run.",
+    what: "Total market value of the company's equity (price × shares), and its size bucket.",
+    how: [
+      "Full market cap = last price × total shares outstanding (₹ Crore).",
+      "Free-float (FF) cap counts only freely-tradable shares — excludes promoter / locked holding. It's what drives index weight.",
+      "Size buckets: Mega ≥ ₹50k Cr, Large ≥ ₹20k Cr, Mid ≥ ₹5k Cr, Small ≥ ₹500 Cr, Micro below.",
+      "Joined to BSE by ISIN, so a handful of newly-renamed / demerged symbols may be missing.",
+    ],
+    benchmarks: [
+      { label: "Large / Mega", note: "lower risk, deeper liquidity", tone: "up" },
+      { label: "Mid", note: "growth + volatility", tone: "muted" },
+      { label: "Small / Micro", note: "highest risk & illiquidity", tone: "down" },
+    ],
+    source: "BSE scrip master (ListofScripData), joined by ISIN",
+  },
   "stock.technical": {
     title: "Technical Analysis",
     window: "Selectable (1M–All)",
