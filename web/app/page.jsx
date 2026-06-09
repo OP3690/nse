@@ -8,6 +8,17 @@ import IndexTicker from "./components/IndexTicker";
 
 export const dynamic = "force-dynamic";
 
+// When the pipeline last ran (the data's true freshness vs the EOD session date).
+// generated_at is a local-time ISO string like "2026-06-09T07:51:39".
+function fmtSynced(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  return d.toLocaleString("en-IN", {
+    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+}
+
 function NoData() {
   return (
     <div className="card text-center py-16">
@@ -190,6 +201,9 @@ export default async function Dashboard() {
           <>
             <div className="text-xs font-semibold text-white">{d.date}</div>
             <div className="text-[11px] text-muted">{d.dates.length} sessions tracked</div>
+            {fmtSynced(d.generated_at) && (
+              <div className="text-[11px] text-muted/80 mt-0.5">Synced {fmtSynced(d.generated_at)}</div>
+            )}
           </>
         }
       >
