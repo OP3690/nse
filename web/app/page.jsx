@@ -199,10 +199,13 @@ export default async function Dashboard() {
         titleAside={d.headline_indices?.length > 0 ? <IndexTicker initial={d.headline_indices} /> : null}
         meta={
           <>
-            <div className="text-xs font-semibold text-white">
-              {d.date}
+            <div className="text-xs font-semibold text-white flex items-center gap-2 flex-wrap">
+              <span>{d.date}</span>
               {fmtSynced(d.generated_at) && (
-                <span className="font-normal text-muted/80"> | Synced {fmtSynced(d.generated_at)}</span>
+                <span className="inline-flex items-center gap-1 rounded-md bg-up/15 text-up px-1.5 py-0.5 font-medium ring-1 ring-up/25">
+                  <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
+                  Synced {fmtSynced(d.generated_at)}
+                </span>
               )}
             </div>
             <div className="text-[11px] text-muted">{d.dates.length} sessions tracked</div>
