@@ -151,7 +151,7 @@ function SectorBoxPlot({ rows, domMin, domMax, onSelect, selected }) {
             className={`group w-full flex items-center gap-2 rounded-md px-1.5 py-1 transition ${on ? "bg-accent/10 ring-1 ring-inset ring-accent/30" : "hover:bg-panel2/40"}`}
             title={`${r.sector} · median ${fmtPct(r.med)} · spread ${(r.q3 - r.q1).toFixed(1)}pts · ${r.n} stocks`}
           >
-            <span className={`w-24 shrink-0 truncate text-left text-xs ${on ? "text-white font-semibold" : "text-muted group-hover:text-white"}`}>
+            <span className={`w-32 sm:w-48 shrink-0 text-left text-[11px] sm:text-xs leading-tight ${on ? "text-white font-semibold" : "text-muted group-hover:text-white"}`}>
               {r.sector}
             </span>
             <div className="relative flex-1 h-5">
