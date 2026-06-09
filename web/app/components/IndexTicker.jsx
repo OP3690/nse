@@ -29,9 +29,9 @@ function Tile({ ix }) {
   const help = TILE_HELP[ix.label];
   return (
     <div className="flex flex-col gap-0.5 px-4 py-2.5 transition hover:bg-panel2/70">
-      <span className="text-[10px] uppercase tracking-wider text-muted font-semibold flex items-center gap-1">
+      <span className="text-[10px] uppercase tracking-wider text-muted font-semibold flex items-center justify-between gap-2">
         {ix.label}
-        {help && <InfoDot topic={help} hidePeriod className="ml-0.5" />}
+        {help && <InfoDot topic={help} hidePeriod />}
       </span>
       <span className="font-mono text-base font-bold text-white tabular-nums leading-tight">{fmt(ix.last, ix.decimals)}</span>
       <span className={`font-mono text-[11px] font-semibold tabular-nums ${tone}`}>
