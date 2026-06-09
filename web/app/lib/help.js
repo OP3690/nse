@@ -110,7 +110,7 @@ export const HELP = {
     ],
     benchmarks: [
       { label: "< 13", note: "complacent / calm — low hedging demand", tone: "up" },
-      { label: "13–18", note: "normal, range-bound volatility", tone: "muted" },
+      { label: "13–18", note: "normal, range-bound volatility", tone: "accent" },
       { label: "18–25", note: "elevated — nervy, larger swings expected", tone: "amber" },
       { label: "> 25", note: "fear / stress — usually a falling market", tone: "down" },
     ],

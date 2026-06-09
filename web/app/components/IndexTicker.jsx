@@ -7,12 +7,12 @@ import InfoDot from "./InfoDot";
 const TILE_HELP = { "India VIX": "dash.vix" };
 
 // India VIX regime light — colour matches the benchmark bands in the tooltip
-// (help "dash.vix"): green calm < 13, grey normal 13–18, amber elevated 18–25,
+// (help "dash.vix"): green calm < 13, blue normal 13–18, amber elevated 18–25,
 // red fear > 25. Returns { color, label } or null if the value is missing.
 function vixRegime(v) {
   if (v == null) return null;
   if (v < 13) return { color: "#16c784", label: "Calm" };
-  if (v < 18) return { color: "#8a96ab", label: "Normal" };
+  if (v < 18) return { color: "#5b8cff", label: "Normal" };
   if (v < 25) return { color: "#f0a020", label: "Elevated" };
   return { color: "#ea3943", label: "Fear" };
 }
