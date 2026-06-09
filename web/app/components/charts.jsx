@@ -577,6 +577,40 @@ export function SectorScatter({ points, selected, onSelect }) {
   );
 }
 
+// Grouped bars: the selected sector's median return vs the market median at
+// each horizon (1M / 3M / 6M / 1Y). Instantly shows out/under-performance shape.
+export function SectorHorizonBars({ data }) {
+  if (!data?.length) return <div className="text-sm text-muted py-8 text-center">No data.</div>;
+  const t = useChartTheme();
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <BarChart data={data} margin={{ top: 8, right: 8, left: -14, bottom: 0 }} barGap={2} barCategoryGap="28%">
+        <CartesianGrid stroke={t.grid} vertical={false} />
+        <XAxis dataKey="label" tick={{ ...AXIS, fontWeight: 700, fill: t.fg }} axisLine={false} tickLine={false} />
+        <YAxis tick={AXIS} tickFormatter={(v) => `${v}%`} />
+        <ReferenceLine y={0} stroke={t.zero} />
+        <Tooltip
+          cursor={{ fill: t.cursor }}
+          content={({ active, payload, label }) =>
+            active && payload?.length
+              ? box(label, payload.map((p) => ({
+                  name: p.name,
+                  color: p.color,
+                  value: `${p.value >= 0 ? "+" : ""}${Number(p.value).toFixed(1)}%`,
+                })))
+              : null
+          }
+        />
+        <Bar dataKey="sector" name="Sector" radius={[3, 3, 0, 0]} isAnimationActive animationDuration={700}>
+          {data.map((d, i) => <Cell key={i} fill={d.sector >= 0 ? "#16c784" : "#ea3943"} />)}
+        </Bar>
+        <Bar dataKey="market" name="Market" radius={[3, 3, 0, 0]} fill="#5b8cff55" isAnimationActive animationDuration={700} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 // ───────────────────── Intelligence visual-analytics charts ─────────────────
 
 export function QuadrantDonut({ quadrants }) {
