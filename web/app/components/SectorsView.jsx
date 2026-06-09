@@ -233,6 +233,17 @@ export default function SectorsView({ analytics, stocks }) {
   const worst = ranked[ranked.length - 1];
   const greenW = ranked.length ? (greens / ranked.length) * 100 : 50;
 
+  // RRG phase distribution — drives the clickable quadrant strip under the map.
+  const phaseGroups = useMemo(() => {
+    const order = ["Leading", "Improving", "Weakening", "Lagging"];
+    return order.map((name) => {
+      const list = sectors
+        .filter((s) => s.phase === name)
+        .sort((a, b) => (b.rel_1m ?? -1e9) - (a.rel_1m ?? -1e9));
+      return { name, list, ...PHASES[name] };
+    });
+  }, [sectors]);
+
   const horizonData = useMemo(
     () =>
       selData
@@ -382,7 +393,7 @@ export default function SectorsView({ analytics, stocks }) {
       </section>
 
       {/* ranking + rotation */}
-      <div className="grid lg:grid-cols-5 gap-5">
+      <div className="grid lg:grid-cols-5 gap-5 lg:items-start">
         <section className="card p-5 space-y-3 lg:col-span-2">
           <h2 className="text-base font-bold text-white flex items-center gap-2">
             {tfLabel} Ranking
@@ -429,6 +440,34 @@ export default function SectorsView({ analytics, stocks }) {
             <span className="text-[11px] text-muted hidden sm:inline">3M (x) vs 1M (y) relative strength · click a bubble</span>
           </div>
           <SectorScatter points={scatterPoints} selected={sel} onSelect={(s) => setSelected(s || defaultSel)} />
+
+          {/* quadrant breakdown — clickable phase chips fill the column + add insight */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+            {phaseGroups.map((g) => {
+              const lead = g.list[0];
+              return (
+                <button
+                  key={g.name}
+                  type="button"
+                  disabled={!lead}
+                  onClick={() => lead && setSelected(lead.sector)}
+                  title={g.note}
+                  className={`group rounded-lg border px-3 py-2 text-left transition ${
+                    lead ? "hover:border-accent/50 hover:bg-panel2/40" : "opacity-50 cursor-default"
+                  } ${g.list.some((s) => s.sector === sel) ? "border-accent/60 bg-accent/5" : "border-line bg-panel2/20"}`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: `rgb(${g.dot})` }} />
+                    <span className={`text-[11px] font-semibold ${g.tone}`}>{g.name}</span>
+                    <span className="ml-auto text-xs font-bold tabular-nums text-white">{g.list.length}</span>
+                  </div>
+                  <div className="mt-1 text-[10px] text-muted truncate group-hover:text-white/80">
+                    {lead ? lead.sector : "—"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </section>
       </div>
 
