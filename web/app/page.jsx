@@ -4,6 +4,7 @@ import { FiiDiiChart } from "./components/charts";
 import MoneyFlow from "./components/MoneyFlow";
 import MoversBoard from "./components/MoversBoard";
 import MarketBrief from "./components/MarketBrief";
+import IndexTicker from "./components/IndexTicker";
 
 export const dynamic = "force-dynamic";
 
@@ -14,35 +15,6 @@ function NoData() {
       <p className="text-muted text-sm">
         Run the pipeline first: <code className="text-accent">cd pipeline && python3 run_daily.py</code>
       </p>
-    </div>
-  );
-}
-
-// Headline index tiles (Nifty 50, Sensex, India VIX) — left-aligned, each a
-// vertical stack of label / value / % change, shown under the dashboard title.
-function IndexTicker({ items }) {
-  if (!items?.length) return null;
-  return (
-    <div className="flex items-stretch divide-x divide-line rounded-xl border border-line bg-panel2/40 overflow-hidden">
-      {items.map((ix) => {
-        const up = (ix.pct ?? 0) >= 0;
-        // VIX is inverted — a rising VIX is risk-off, so colour it red when up.
-        const good = ix.invert ? !up : up;
-        const tone = ix.pct == null ? "text-muted" : good ? "text-up" : "text-down";
-        const dec = ix.decimals;
-        const fmt = (n) => Number(n).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec });
-        return (
-          <div key={ix.label} className="flex flex-col gap-0.5 px-4 py-2.5 transition hover:bg-panel2/70">
-            <span className="text-[10px] uppercase tracking-wider text-muted font-semibold">{ix.label}</span>
-            <span className="font-mono text-base font-bold text-white tabular-nums leading-tight">{fmt(ix.last)}</span>
-            <span className={`font-mono text-[11px] font-semibold tabular-nums ${tone}`}>
-              {ix.pct == null ? "—" : (
-                <>{up ? "▲ +" : "▼ "}{ix.change != null ? fmt(ix.change) : ""} ({up ? "+" : ""}{Number(ix.pct).toFixed(2)}%)</>
-              )}
-            </span>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -213,7 +185,7 @@ export default async function Dashboard() {
       <PageHeader
         title="NSE Money Flow"
         chip="Latest session"
-        titleAside={d.headline_indices?.length > 0 ? <IndexTicker items={d.headline_indices} /> : null}
+        titleAside={d.headline_indices?.length > 0 ? <IndexTicker initial={d.headline_indices} /> : null}
         meta={
           <>
             <div className="text-xs font-semibold text-white">{d.date}</div>
