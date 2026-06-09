@@ -201,6 +201,22 @@ export const HELP = {
     ],
     source: "Relative strength vs the liquid universe median",
   },
+  "sectors.distribution": {
+    title: "Return Distribution",
+    window: "Selected window",
+    windowLong: "Spread of constituent returns within each sector for the active window.",
+    what: "A box-and-whisker per sector showing how widely its constituents' returns are spread — not just the median, but the whole shape of the move.",
+    how: [
+      "Box spans Q1–Q3 (the middle 50% of constituents); the line inside is the median.",
+      "Whiskers reach the 5th and 95th percentiles; all sectors share one x-axis for 1:1 comparison.",
+      "A tight box = a broad, coherent move; a wide box = a few outliers are carrying the sector.",
+    ],
+    benchmarks: [
+      { label: "Tight box", note: "broad participation — reliable read", tone: "up" },
+      { label: "Wide box", note: "dispersed — driven by a few names", tone: "amber" },
+    ],
+    source: "Quantiles of the liquid screener universe, per sector",
+  },
   "sectors.detail": {
     title: "Sector Breakdown",
     window: "Today · 1M–1Y",

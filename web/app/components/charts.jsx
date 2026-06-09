@@ -6,6 +6,7 @@ import {
   ComposedChart, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, Cell,
   CartesianGrid, ReferenceLine, ReferenceArea, ReferenceDot, LabelList,
   PieChart, Pie, Customized,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from "recharts";
 
 // ── Theme-aware chart "chrome" (axis/grid/zero-line/cursor/separators) ────────
@@ -607,6 +608,91 @@ export function SectorHorizonBars({ data }) {
         </Bar>
         <Bar dataKey="market" name="Market" radius={[3, 3, 0, 0]} fill="#5b8cff55" isAnimationActive animationDuration={700} />
       </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Constituent map: every liquid stock in the selected sector plotted as
+// momentum (x = trailing return) vs smart-money score (y), bubble sized by
+// market cap. Quadrant split (x=0, y=score median) isolates the names that are
+// both rising AND being accumulated — the top-right "conviction" corner.
+function CDot({ cx, cy, payload, onSelect }) {
+  if (cx == null || cy == null) return null;
+  const up = (payload.x ?? 0) >= 0;
+  const col = up ? "#16c784" : "#ea3943";
+  return (
+    <g style={{ cursor: onSelect ? "pointer" : "default" }} onClick={() => onSelect?.(payload.symbol)}>
+      <circle cx={cx} cy={cy} r={payload.r ?? 5} fill={col} fillOpacity={0.55} stroke={col} strokeWidth={1.2} />
+    </g>
+  );
+}
+
+export function ConstituentScatter({ points, scoreRef = 0, onSelect }) {
+  if (!points?.length) return <div className="text-sm text-muted py-10 text-center">No constituent data.</div>;
+  const th = useChartTheme();
+  const AXIS = { stroke: th.axis, fontSize: 11 };
+  const maxAbsX = Math.max(6, ...points.map((p) => Math.abs(p.x ?? 0))) * 1.12;
+  const ys = points.map((p) => p.y ?? 0);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const yPad = Math.max(4, (yMax - yMin) * 0.12);
+  const QL = (value, fill, position) => ({ value, position, fill, fontSize: 9, fontWeight: 800, opacity: 0.55, letterSpacing: 0.6 });
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <ScatterChart margin={{ top: 14, right: 18, left: -6, bottom: 2 }}>
+        <ReferenceArea x1={0} x2={maxAbsX} y1={scoreRef} y2={yMax + yPad} fill="#16c784" fillOpacity={0.06}
+          label={QL("RISING · ACCUMULATED", "#16c784", "insideTopRight")} />
+        <ReferenceArea x1={-maxAbsX} x2={0} y1={scoreRef} y2={yMax + yPad} fill="#5b8cff" fillOpacity={0.05}
+          label={QL("WEAK · ACCUMULATED", "#5b8cff", "insideTopLeft")} />
+        <ReferenceArea x1={-maxAbsX} x2={0} y1={yMin - yPad} y2={scoreRef} fill="#ea3943" fillOpacity={0.05} />
+        <CartesianGrid stroke={th.grid} strokeOpacity={0.4} />
+        <XAxis type="number" dataKey="x" name="Return" domain={[-maxAbsX, maxAbsX]} tick={AXIS} tickFormatter={(v) => v.toFixed(0)} unit="%" />
+        <YAxis type="number" dataKey="y" name="Score" domain={[yMin - yPad, yMax + yPad]} tick={AXIS} tickFormatter={(v) => v.toFixed(0)} />
+        <ZAxis type="number" dataKey="z" range={[30, 420]} />
+        <ReferenceLine x={0} stroke={th.zero} strokeDasharray="4 4" />
+        <ReferenceLine y={scoreRef} stroke={th.zero} strokeDasharray="4 4" />
+        <Tooltip
+          cursor={{ stroke: th.zero, strokeDasharray: "3 3" }}
+          content={({ active, payload }) =>
+            active && payload?.length && payload[0].payload.symbol
+              ? box(payload[0].payload.symbol, [
+                  { name: "Return", color: payload[0].payload.x >= 0 ? "#16c784" : "#ea3943", value: `${payload[0].payload.x >= 0 ? "+" : ""}${payload[0].payload.x?.toFixed(1)}%` },
+                  { name: "Smart-money", color: "#c7d0e0", value: payload[0].payload.y?.toFixed(0) },
+                  { name: "Mkt cap", color: "#c7d0e0", value: `₹${Math.round(payload[0].payload.z).toLocaleString("en-IN")} Cr` },
+                ])
+              : null
+          }
+        />
+        <Scatter data={points} shape={<CDot onSelect={onSelect} />} isAnimationActive animationDuration={600} />
+      </ScatterChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Sector "style fingerprint": six factor axes, each min-max ranked across all
+// sectors so the shape reads as this sector's percentile vs peers (further out
+// = stronger). The dashed ring marks the cross-sector midpoint (50).
+export function SectorFactorRadar({ data }) {
+  if (!data?.length) return <div className="text-sm text-muted py-10 text-center">No factor data.</div>;
+  const th = useChartTheme();
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <RadarChart data={data} outerRadius="72%" margin={{ top: 10, right: 18, bottom: 6, left: 18 }}>
+        <PolarGrid stroke={th.grid} />
+        <PolarAngleAxis dataKey="axis" tick={{ fill: th.axis, fontSize: 10.5, fontWeight: 600 }} />
+        <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+        <Radar dataKey={() => 50} stroke={th.axis} strokeDasharray="4 3" strokeOpacity={0.45} fill="none" isAnimationActive={false} />
+        <Radar dataKey="val" stroke="#5b8cff" strokeWidth={2} fill="#5b8cff" fillOpacity={0.26} isAnimationActive animationDuration={650} />
+        <Tooltip
+          content={({ active, payload }) =>
+            active && payload?.length
+              ? box(payload[0].payload.axis, [
+                  { name: "Percentile", color: "#5b8cff", value: `${Math.round(payload[0].payload.val)} / 100` },
+                  { name: payload[0].payload.unit || "value", color: "#c7d0e0", value: payload[0].payload.raw },
+                ])
+              : null
+          }
+        />
+      </RadarChart>
     </ResponsiveContainer>
   );
 }

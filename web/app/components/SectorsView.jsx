@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import InfoDot from "./InfoDot";
 import { SymbolLink } from "./ui";
-import { SectorScatter, SectorHorizonBars } from "./charts";
+import { SectorScatter, SectorHorizonBars, ConstituentScatter, SectorFactorRadar } from "./charts";
 
 const UP = "22 199 132"; // #16c784
 const DOWN = "234 57 67"; // #ea3943
@@ -33,6 +33,16 @@ function heat(v, scale, floor = 0.06, ceil = 0.5) {
   if (v == null) return "transparent";
   const a = Math.min(1, Math.abs(v) / (scale || 1)) * (ceil - floor) + floor;
   return `rgb(${v >= 0 ? UP : DOWN} / ${a.toFixed(3)})`;
+}
+
+// Linear-interpolated quantile of a pre-sorted ascending array.
+function quantile(sorted, q) {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
 // ── squarified treemap (Bruls/Huizing/van Wijk) in pixel space ──────────────
@@ -118,6 +128,53 @@ function Spark({ pts, w = 60, h = 20, strokeW = 1.6 }) {
       <path d={d} fill="none" stroke={col} strokeWidth={strokeW} strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={lastX} cy={yOf(last)} r={2} fill={col} />
     </svg>
+  );
+}
+
+// Horizontal box-and-whisker per sector: shows the FULL return distribution of
+// each sector's constituents (p5 · Q1 · median · Q3 · p95), not just the median.
+// A tight box = a coherent move; a wide box = a few names carrying the sector.
+function SectorBoxPlot({ rows, domMin, domMax, onSelect, selected }) {
+  const span = domMax - domMin || 1;
+  const pos = (v) => `${((v - domMin) / span) * 100}%`;
+  const zero = domMin <= 0 && domMax >= 0 ? pos(0) : null;
+  return (
+    <div className="space-y-1">
+      {rows.map((r) => {
+        const on = r.sector === selected;
+        const col = r.med >= 0 ? UP : DOWN;
+        return (
+          <button
+            key={r.sector}
+            type="button"
+            onClick={() => onSelect?.(r.sector)}
+            className={`group w-full flex items-center gap-2 rounded-md px-1.5 py-1 transition ${on ? "bg-accent/10 ring-1 ring-inset ring-accent/30" : "hover:bg-panel2/40"}`}
+            title={`${r.sector} · median ${fmtPct(r.med)} · spread ${(r.q3 - r.q1).toFixed(1)}pts · ${r.n} stocks`}
+          >
+            <span className={`w-24 shrink-0 truncate text-left text-xs ${on ? "text-white font-semibold" : "text-muted group-hover:text-white"}`}>
+              {r.sector}
+            </span>
+            <div className="relative flex-1 h-5">
+              {zero && <div className="absolute top-0 bottom-0 w-px bg-line/70" style={{ left: zero }} />}
+              {/* whisker p5 → p95 */}
+              <div className="absolute top-1/2 h-px -translate-y-1/2" style={{ left: pos(r.p5), right: `calc(100% - ${pos(r.p95)})`, background: `rgb(${col} / 0.5)` }} />
+              {/* whisker caps */}
+              <div className="absolute top-1/2 h-2 w-px -translate-y-1/2" style={{ left: pos(r.p5), background: `rgb(${col} / 0.6)` }} />
+              <div className="absolute top-1/2 h-2 w-px -translate-y-1/2" style={{ left: pos(r.p95), background: `rgb(${col} / 0.6)` }} />
+              {/* IQR box */}
+              <div
+                className="absolute top-1/2 h-3 -translate-y-1/2 rounded-sm border"
+                style={{ left: pos(r.q1), right: `calc(100% - ${pos(r.q3)})`, background: `rgb(${col} / 0.28)`, borderColor: `rgb(${col} / 0.7)` }}
+              />
+              {/* median */}
+              <div className="absolute top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded" style={{ left: pos(r.med), background: `rgb(${col})` }} />
+            </div>
+            <span className={`w-12 text-right text-xs font-mono tabular-nums font-semibold ${toneCls(r.med)}`}>{fmtPct(r.med)}</span>
+            <span className="w-7 text-right text-[10px] tabular-nums text-muted/70">{r.n}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -251,6 +308,65 @@ export default function SectorsView({ analytics, stocks }) {
         : [],
     [selData, market]
   );
+
+  // Return-distribution box plots: the full spread of constituent returns per
+  // sector on the active window, with a shared x-domain so sectors compare 1:1.
+  const boxData = useMemo(() => {
+    const bySec = {};
+    (stocks || []).forEach((e) => {
+      const v = e[retKey];
+      if (v == null) return;
+      (bySec[e.sector] ||= []).push(v);
+    });
+    const rows = [];
+    let lo = Infinity, hi = -Infinity;
+    Object.entries(bySec).forEach(([sector, arr]) => {
+      if (arr.length < 4) return;
+      arr.sort((a, b) => a - b);
+      const p5 = quantile(arr, 0.05), q1 = quantile(arr, 0.25), med = quantile(arr, 0.5),
+        q3 = quantile(arr, 0.75), p95 = quantile(arr, 0.95);
+      rows.push({ sector, p5, q1, med, q3, p95, n: arr.length });
+      lo = Math.min(lo, p5); hi = Math.max(hi, p95);
+    });
+    rows.sort((a, b) => b.med - a.med);
+    lo = Math.min(lo, 0); hi = Math.max(hi, 0);
+    const pad = (hi - lo) * 0.04 || 1;
+    return { rows, domMin: lo - pad, domMax: hi + pad };
+  }, [stocks, retKey]);
+
+  // Constituent map of the selected sector: momentum (return) × smart-money score.
+  const constituentPts = useMemo(
+    () =>
+      constituents
+        .filter((e) => e[retKey] != null && e.score != null)
+        .map((e) => ({ x: e[retKey], y: e.score, z: Math.max(e.mktcap_cr || 200, 200), symbol: e.symbol, company: e.company })),
+    [constituents, retKey]
+  );
+  const scoreRef = useMemo(() => {
+    const ss = constituentPts.map((p) => p.y).sort((a, b) => a - b);
+    return quantile(ss, 0.5) ?? 0;
+  }, [constituentPts]);
+
+  // Sector style fingerprint: six metrics percentile-ranked across all sectors.
+  const radarData = useMemo(() => {
+    if (!selData || sectors.length < 2) return [];
+    const metrics = [
+      ["Momentum", "1M %", (s) => s.r1m],
+      ["Trend", "6M %", (s) => s.r6m],
+      ["Smart money", "score", (s) => s.score],
+      ["Breadth", "% adv", (s) => (s.adv + s.dec ? (s.adv / (s.adv + s.dec)) * 100 : null)],
+      ["Delivery", "% deliv", (s) => s.deliv],
+      ["Recovery", "% from high", (s) => s.from_high],
+    ];
+    return metrics.map(([axis, unit, fn]) => {
+      const vals = sectors.map(fn).filter((v) => v != null);
+      const v = fn(selData);
+      if (v == null || vals.length < 2) return { axis, val: 50, raw: "—", unit };
+      const below = vals.filter((x) => x <= v).length - 1;
+      const pct = Math.max(0, Math.min(100, (below / (vals.length - 1)) * 100));
+      return { axis, val: pct, raw: unit.includes("%") ? `${v.toFixed(1)}%` : v.toFixed(0), unit };
+    });
+  }, [selData, sectors]);
 
   if (!sectors.length)
     return <div className="card p-8 text-center text-muted">Sector analytics build as the pipeline runs.</div>;
@@ -471,6 +587,36 @@ export default function SectorsView({ analytics, stocks }) {
         </section>
       </div>
 
+      {/* return distribution — box & whisker per sector */}
+      {boxData.rows.length > 0 && (
+        <section className="card p-5 space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                Return Distribution · {tfLabel}
+                <InfoDot topic="sectors.distribution" />
+              </h2>
+              <p className="text-xs text-muted mt-1 max-w-2xl">
+                The full spread of each sector's constituent {tfLabel} returns — box = middle 50% (Q1–Q3),
+                line = median, whiskers = 5th–95th percentile. A tight box means a broad, coherent move;
+                a wide box means a few names are carrying the sector.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] text-muted">
+              <span className="inline-flex items-center gap-1.5"><span className="h-3 w-4 rounded-sm border border-up/70 bg-up/25" />IQR</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-3.5 w-[2px] rounded bg-up" />median</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-px w-5 bg-up/60" />5–95%</span>
+            </div>
+          </div>
+          <SectorBoxPlot rows={boxData.rows} domMin={boxData.domMin} domMax={boxData.domMax} onSelect={setSelected} selected={sel} />
+          <div className="flex justify-between text-[10px] text-muted font-mono tabular-nums pt-0.5 border-t border-line/50">
+            <span>{boxData.domMin.toFixed(0)}%</span>
+            <span className="text-muted/60">0%</span>
+            <span>+{boxData.domMax.toFixed(0)}%</span>
+          </div>
+        </section>
+      )}
+
       {/* sector detail */}
       {selData && (
         <section className="card p-0 overflow-hidden">
@@ -543,6 +689,27 @@ export default function SectorsView({ analytics, stocks }) {
                   <div className="text-[10px] text-muted mt-0.5">{sub}</div>
                 </div>
               ))}
+            </div>
+
+            {/* constituent map + factor fingerprint */}
+            <div className="grid lg:grid-cols-5 gap-5">
+              <div className="lg:col-span-3 rounded-lg border border-line bg-panel2/20 p-3">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                    Constituent map
+                    <span className="text-[10px] font-normal text-muted">{tfLabel} return × smart-money score · bubble = mkt cap</span>
+                  </div>
+                </div>
+                <ConstituentScatter points={constituentPts} scoreRef={scoreRef} />
+                <div className="text-[10px] text-muted mt-1">
+                  Top-right = rising <span className="text-white/70">and</span> accumulated. Dashed lines: 0% return and the sector's median score.
+                </div>
+              </div>
+              <div className="lg:col-span-2 rounded-lg border border-line bg-panel2/20 p-3">
+                <div className="text-xs font-semibold text-white mb-1">Style fingerprint</div>
+                <SectorFactorRadar data={radarData} />
+                <div className="text-[10px] text-muted mt-1">Percentile vs all sectors — further out is stronger; dashed ring = median sector.</div>
+              </div>
             </div>
 
             {/* leaders / laggards */}
