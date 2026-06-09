@@ -6,6 +6,17 @@ import InfoDot from "./InfoDot";
 // Help topics for tiles that carry a "?" explainer (keyed by tile label).
 const TILE_HELP = { "India VIX": "dash.vix" };
 
+// India VIX regime light — colour matches the benchmark bands in the tooltip
+// (help "dash.vix"): green calm < 13, grey normal 13–18, amber elevated 18–25,
+// red fear > 25. Returns { color, label } or null if the value is missing.
+function vixRegime(v) {
+  if (v == null) return null;
+  if (v < 13) return { color: "#16c784", label: "Calm" };
+  if (v < 18) return { color: "#8a96ab", label: "Normal" };
+  if (v < 25) return { color: "#f0a020", label: "Elevated" };
+  return { color: "#ea3943", label: "Fear" };
+}
+
 // Headline index tiles (Nifty 50, Sensex, India VIX) under the dashboard title.
 // Hydrates with the server snapshot, then polls /api/indices for live,
 // exchange-authoritative quotes (NSE allIndices + Yahoo ^BSESN) so the values
@@ -27,10 +38,20 @@ function Tile({ ix }) {
   const good = ix.invert ? !up : up;
   const tone = ix.pct == null ? "text-muted" : good ? "text-up" : "text-down";
   const help = TILE_HELP[ix.label];
+  const regime = ix.label === "India VIX" ? vixRegime(ix.last) : null;
   return (
     <div className="flex flex-col gap-0.5 px-4 py-2.5 transition hover:bg-panel2/70">
       <span className="text-[10px] uppercase tracking-wider text-muted font-semibold flex items-center justify-between gap-2">
-        {ix.label}
+        <span className="flex items-center gap-1.5">
+          {ix.label}
+          {regime && (
+            <span
+              className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0"
+              style={{ backgroundColor: regime.color, boxShadow: `0 0 5px ${regime.color}` }}
+              title={`${regime.label} — India VIX ${fmt(ix.last, ix.decimals)}`}
+            />
+          )}
+        </span>
         {help && <InfoDot topic={help} hidePeriod />}
       </span>
       <span className="font-mono text-base font-bold text-white tabular-nums leading-tight">{fmt(ix.last, ix.decimals)}</span>
