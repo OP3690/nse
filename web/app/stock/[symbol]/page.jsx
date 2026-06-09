@@ -16,6 +16,14 @@ function fmtMktcap(cr) {
   return `₹${Math.round(cr).toLocaleString("en-IN")} Cr`;
 }
 
+// "2026-06-08" -> "8 Jun 2026" (the EOD session the data reflects).
+function fmtDate(iso) {
+  if (!iso) return null;
+  const d = new Date(`${iso}T00:00:00`);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
 const SIZE_TONE = {
   Mega: "bg-accent/15 text-accent",
   Large: "bg-up/15 text-up",
@@ -106,6 +114,9 @@ export default async function StockPage({ params }) {
             <div className="text-xs text-muted uppercase tracking-wide">Current Price</div>
             <div className="text-3xl font-bold font-mono tabular-nums text-white">₹{m.close?.toLocaleString("en-IN")}</div>
             <div className="text-sm"><Pct value={m.pct_change} /></div>
+            {last.date && (
+              <div className="text-[11px] text-muted mt-1">Last updated: {fmtDate(last.date)} (EOD)</div>
+            )}
             <Wk52Range high={m.wk_high} low={m.wk_low} close={m.close} pos={m.wk52_pos} />
           </div>
         </div>
