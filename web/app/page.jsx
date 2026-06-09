@@ -247,7 +247,7 @@ export default async function Dashboard() {
         </div>
 
         {/* sector rotation */}
-        <Section title="Sector Rotation" href="/screener" info="dash.sector_rotation">
+        <Section title="Sector Rotation" href="/sectors" info="dash.sector_rotation">
           <div className="space-y-2">
             {sectors.slice(0, 8).map((s) => (
               <div key={s.sector} className="flex items-center gap-2">

@@ -119,6 +119,100 @@ def build_return_bands(rows):
     return {"1m": _bands_for(rows, "ret_1m"), "3m": _bands_for(rows, "ret_3m")}
 
 
+def _median(xs):
+    """Median of a list (Nones dropped). None for an empty list. Used for sector
+    aggregates so a single blown-out constituent can't drag the whole read."""
+    vals = sorted(v for v in xs if v is not None)
+    n = len(vals)
+    if not n:
+        return None
+    mid = n // 2
+    return vals[mid] if n % 2 else (vals[mid - 1] + vals[mid]) / 2
+
+
+def build_sector_analytics(rows, index_sectors):
+    """Per-sector cross-sectional analytics for the dedicated Sectors page.
+
+    For every sector with >=3 liquid constituents, compute robust (median)
+    trailing returns at 1M / 3M / 6M / 1Y, today's move, breadth, smart-money
+    score, drawdown-from-high, delivery, turnover, market cap and institutional
+    flow. Relative strength is each sector's return minus the whole universe's
+    median at that horizon; the RRG-style phase reads short (1M) vs long (3M)
+    relative strength. NSE's own sector-index returns (30d / 1y) are attached
+    where the name lines up. Descriptive analytics — not advice."""
+    idx_by_sec = {s["sector"]: s for s in (index_sectors or []) if s.get("sector")}
+
+    groups: dict[str, list] = {}
+    allret = {"1m": [], "3m": [], "6m": [], "1y": []}
+    keymap = {"1m": "ret_1m", "3m": "ret_3m", "6m": "ret_6m", "1y": "ret_1y"}
+    for e in rows or []:
+        sec = e.get("sector")
+        if not sec:
+            continue
+        groups.setdefault(sec, []).append(e)
+        for hz, key in keymap.items():
+            if e.get(key) is not None:
+                allret[hz].append(e[key])
+    market = {hz: _median(v) for hz, v in allret.items()}
+
+    def _slim(e):
+        return {"symbol": e["symbol"], "company": e.get("company"),
+                "ret_1y": e.get("ret_1y"), "ret_1m": e.get("ret_1m"),
+                "pct_change": e.get("pct_change"), "score": e.get("score")}
+
+    out = []
+    for sec, lst in groups.items():
+        if len(lst) < 3:
+            continue
+        col = lambda key: [e[key] for e in lst if e.get(key) is not None]  # noqa: E731
+        r1, r3 = _median(col("ret_1m")), _median(col("ret_3m"))
+        r6, r1y = _median(col("ret_6m")), _median(col("ret_1y"))
+        turnover = sum(col("turnover_cr"))
+        mcap = sum(e["mktcap_cr"] for e in lst if e.get("mktcap_cr"))
+        inst_vals = col("inst_net_cr")
+        adv = sum(1 for e in lst if (e.get("pct_change") or 0) > 0.05)
+        dec = sum(1 for e in lst if (e.get("pct_change") or 0) < -0.05)
+        rel_s = (r1 or 0) - (market["1m"] or 0)
+        rel_l = (r3 or 0) - (market["3m"] or 0)
+        phase = ("Leading" if rel_l >= 0 and rel_s >= 0 else
+                 "Weakening" if rel_l >= 0 else
+                 "Improving" if rel_s >= 0 else "Lagging")
+        ranked = sorted(
+            lst, key=lambda e: (e.get("ret_1y") if e.get("ret_1y") is not None
+                                else e.get("ret_3m") if e.get("ret_3m") is not None
+                                else -1e9),
+            reverse=True)
+        idx = idx_by_sec.get(sec) or {}
+        out.append({
+            "sector": sec, "count": len(lst),
+            "today": _median(col("pct_change")),
+            "r1m": r1, "r3m": r3, "r6m": r6, "r1y": r1y,
+            "rel_1m": round(rel_s, 2), "rel_3m": round(rel_l, 2),
+            "score": _median(col("score")), "from_high": _median(col("from_high")),
+            "deliv": _median(col("deliv_pct")),
+            "turnover_cr": round(turnover, 1),
+            "mktcap_cr": round(mcap) if mcap else None,
+            "inst_net_cr": round(sum(inst_vals), 2) if inst_vals else None,
+            "adv": adv, "dec": dec, "unch": len(lst) - adv - dec,
+            "phase": phase,
+            "index": idx.get("index"), "idx_pct": idx.get("pct"),
+            "idx_30d": idx.get("pchg30d"), "idx_365d": idx.get("pchg365d"),
+            "leaders": [_slim(e) for e in ranked[:3]],
+            "laggards": [_slim(e) for e in ranked[-3:][::-1]],
+        })
+
+    for o in out:
+        for k in ("today", "r1m", "r3m", "r6m", "r1y", "score", "from_high", "deliv"):
+            if o[k] is not None:
+                o[k] = round(o[k], 2)
+    out.sort(key=lambda s: (s["r1m"] if s["r1m"] is not None else -1e9), reverse=True)
+    return {
+        "sectors": out,
+        "market": {hz: (round(v, 2) if v is not None else None) for hz, v in market.items()},
+        "count": len(out),
+    }
+
+
 def latest_date(con) -> str | None:
     row = con.execute("SELECT MAX(date) d FROM delivery_daily").fetchone()
     return row["d"] if row else None
@@ -721,6 +815,10 @@ def build(con) -> dict:
         series = histories.get(sym, [])
         e["ret_1m"] = _trailing_return(series, 21)
         e["ret_3m"] = _trailing_return(series, 63)
+        e["ret_6m"] = _trailing_return(series, 126)
+        # ~1 trading year. 248 (not 252) so it resolves against the ~251-session
+        # history we keep; stocks listed under a year stay null, as they should.
+        e["ret_1y"] = _trailing_return(series, 248)
 
     rated = [e for e in headline if "trend_score" in e]
     uptrends = sorted(
@@ -820,6 +918,7 @@ def build(con) -> dict:
         "pulse": pulse_data,
         "tooltips": tooltips,
         "sectors": sectors_out,
+        "sector_analytics": build_sector_analytics(headline, index_sectors),
         "top_accumulation": headline[:40],
         "oi_buildup": buckets,
         "notable_deals": notable,

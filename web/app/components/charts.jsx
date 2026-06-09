@@ -507,6 +507,76 @@ export function RRGChart({ points, tails }) {
   );
 }
 
+// ───────────────────────────── Sector analytics ────────────────────────────
+
+const SECTOR_QUAD = {
+  Leading: "#16c784", Weakening: "#f0a020", Improving: "#5b8cff", Lagging: "#ea3943",
+};
+
+function SectorDot({ cx, cy, payload, onSelect, selected, ink = "#0b0f17" }) {
+  if (cx == null || cy == null) return null;
+  const c = SECTOR_QUAD[payload?.phase] || "#8a96ab";
+  const r = 5 + Math.min(7, (payload?.r || 0));
+  const on = selected === payload.sector;
+  return (
+    <g style={{ cursor: "pointer" }} onClick={() => onSelect?.(on ? null : payload.sector)}>
+      {on && <circle cx={cx} cy={cy} r={r + 5} fill="none" stroke={c} strokeWidth={1.5} strokeOpacity={0.6} />}
+      <circle cx={cx} cy={cy} r={r} fill={c} fillOpacity={on ? 0.95 : 0.7} stroke={ink} strokeWidth={1.4} />
+    </g>
+  );
+}
+
+// Rotation map: each sector by long-horizon relative strength (3M vs market, x)
+// against short-horizon relative strength (1M vs market, y). The four quadrants
+// are the classic RRG read — Leading (top-right) through Lagging (bottom-left).
+export function SectorScatter({ points, selected, onSelect }) {
+  if (!points?.length) return <div className="text-sm text-muted py-8 text-center">No rotation data yet.</div>;
+  const th = useChartTheme();
+  const AXIS = { stroke: th.axis, fontSize: 11 };
+  const maxAbsX = Math.max(4, ...points.map((p) => Math.abs(p.x ?? 0))) * 1.15;
+  const maxAbsY = Math.max(4, ...points.map((p) => Math.abs(p.y ?? 0))) * 1.15;
+  const QL = (value, fill, position) => ({ value, position, fill, fontSize: 9.5, fontWeight: 800, opacity: 0.5, letterSpacing: 1 });
+  return (
+    <ResponsiveContainer width="100%" height={400}>
+      <ScatterChart margin={{ top: 14, right: 20, left: -4, bottom: 4 }}>
+        <ReferenceArea x1={0} x2={maxAbsX} y1={0} y2={maxAbsY} fill="#16c784" fillOpacity={0.05}
+          label={QL("LEADING", "#16c784", "insideTopRight")} />
+        <ReferenceArea x1={0} x2={maxAbsX} y1={-maxAbsY} y2={0} fill="#f0a020" fillOpacity={0.05}
+          label={QL("WEAKENING", "#f0a020", "insideBottomRight")} />
+        <ReferenceArea x1={-maxAbsX} x2={0} y1={0} y2={maxAbsY} fill="#5b8cff" fillOpacity={0.05}
+          label={QL("IMPROVING", "#5b8cff", "insideTopLeft")} />
+        <ReferenceArea x1={-maxAbsX} x2={0} y1={-maxAbsY} y2={0} fill="#ea3943" fillOpacity={0.05}
+          label={QL("LAGGING", "#ea3943", "insideBottomLeft")} />
+        <CartesianGrid stroke={th.grid} strokeOpacity={0.4} />
+        <XAxis type="number" dataKey="x" name="3M vs mkt" domain={[-maxAbsX, maxAbsX]}
+          tick={AXIS} tickFormatter={(v) => v.toFixed(0)} unit="%" />
+        <YAxis type="number" dataKey="y" name="1M vs mkt" domain={[-maxAbsY, maxAbsY]}
+          tick={AXIS} tickFormatter={(v) => v.toFixed(0)} unit="%" />
+        <ReferenceLine x={0} stroke={th.zero} strokeDasharray="4 4" />
+        <ReferenceLine y={0} stroke={th.zero} strokeDasharray="4 4" />
+        <Tooltip
+          cursor={{ stroke: th.zero, strokeDasharray: "3 3" }}
+          content={({ active, payload }) =>
+            active && payload?.length && payload[0].payload.sector
+              ? box(payload[0].payload.sector, [
+                  { name: payload[0].payload.phase, color: SECTOR_QUAD[payload[0].payload.phase], value: "" },
+                  { name: "3M vs mkt", color: "#c7d0e0", value: `${payload[0].payload.x >= 0 ? "+" : ""}${payload[0].payload.x?.toFixed(1)}%` },
+                  { name: "1M vs mkt", color: "#c7d0e0", value: `${payload[0].payload.y >= 0 ? "+" : ""}${payload[0].payload.y?.toFixed(1)}%` },
+                ])
+              : null
+          }
+        />
+        <Scatter data={points} shape={<SectorDot ink={th.ink} selected={selected} onSelect={onSelect} />}
+          isAnimationActive animationDuration={700}>
+          <LabelList dataKey="sector" position="top" offset={8}
+            style={{ fill: th.fg, fontSize: 9.5, fontWeight: 600 }}
+            formatter={(v) => (v.length > 12 ? v.slice(0, 11) + "…" : v)} />
+        </Scatter>
+      </ScatterChart>
+    </ResponsiveContainer>
+  );
+}
+
 // ───────────────────── Intelligence visual-analytics charts ─────────────────
 
 export function QuadrantDonut({ quadrants }) {

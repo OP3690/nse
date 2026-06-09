@@ -14,6 +14,7 @@ const ICONS = {
   "/ipo": "M12 3v3m0 12v3m9-9h-3M6 12H3m13.5-6.5-2 2m-7 7-2 2m11 0-2-2m-7-7-2-2", // radar/burst
   "/screener": "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 4 4",   // magnifier
   "/strategy": "M3 3v18h18M8 14l3-4 3 3 4-6",                      // strategy chart
+  "/sectors": "M4 4h7v7H4zm9 0h7v4h-7zm0 6h7v10h-7zM4 13h7v7H4z", // grid / heatmap
 };
 
 const LINKS = [
@@ -22,6 +23,7 @@ const LINKS = [
   ["/forecast", "Forecast"],
   ["/flows", "Flows"],
   ["/intelligence", "Intelligence"],
+  ["/sectors", "Sectors"],
   ["/ipo", "IPO Radar"],
   ["/screener", "Screener"],
   ["/strategy", "Strategy Lab"],
