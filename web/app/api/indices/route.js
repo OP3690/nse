@@ -6,40 +6,52 @@ import { getLatest } from "../../lib/data";
 export const dynamic = "force-dynamic";
 
 // Live headline-index quotes (Nifty 50 / Sensex / India VIX) for the dashboard
-// ticker. Three-tier sourcing, identical shape at every tier:
+// ticker. Sourced exchange-first, with identical tile shape at every tier:
 //
-//   1. pipeline/live_indices.py — exchange-authoritative (NSE allIndices + BSE
-//      IndexMovers). Needs a real Chrome TLS fingerprint, so it only works where
-//      the pipeline runs (local / self-hosted). Skipped on Vercel.
-//   2. Live web feeds reachable from anywhere, including Vercel's datacenter IPs
-//      (NSE blocks those; it needs a Chrome TLS fingerprint). Nifty + India VIX
-//      come from Yahoo's chart API; Sensex from BSE's own IndexMovers feed
-//      (plain server fetch + Referer works — Yahoo's ^BSESN lags a session).
+//   1. pipeline/live_indices.py — exchange-authoritative via curl_cffi. Only
+//      runs where the pipeline lives (local / self-hosted). Skipped on Vercel.
+//   2. Exchange APIs fetched directly from Node (works on Vercel too): Nifty 50
+//      and India VIX from NSE's allIndices (a homepage cookie warmup clears
+//      NSE's Akamai wall — the block is cookie-based, not a TLS-fingerprint one,
+//      so undici gets through), Sensex from BSE's IndexMovers feed. Yahoo's
+//      chart API is a *fallback only* for Nifty/VIX if NSE is unreachable, since
+//      Yahoo's Indian-index data is a session stale and its prev-close is wrong.
 //   3. EOD snapshot stamped into latest.json / Mongo by the daily run.
 //
-// This is what makes the ticker live on Vercel: tier 1 is unreachable there, so
-// tier 2 (Yahoo) carries it instead of falling straight through to the EOD tier.
+// This is what makes the ticker live on Vercel: tier 1 is skipped there, so
+// tier 2 carries it with real NSE/BSE quotes instead of the frozen EOD tier.
 
 const PYTHON_BIN = process.env.PYTHON_BIN || "/usr/bin/python3";
 const PIPELINE_DIR =
   process.env.PIPELINE_DIR || path.join(process.cwd(), "..", "pipeline");
 const CACHE_MS = 30_000; // don't re-hit upstreams more than ~2×/min
+const FETCH_TIMEOUT = 8_000;
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-// Yahoo ticker -> dashboard tile metadata (label/decimals/invert mirror
-// analyze.HEADLINE_INDICES so the rendered shape is identical to tiers 1 & 3).
-// NOTE: Sensex is fetched from BSE's own API, NOT Yahoo — Yahoo's ^BSESN lags a
-// full session (its regularMarketTime stays on yesterday's close), which would
-// show a stale/wrong-direction quote. Yahoo's ^NSEI and ^INDIAVIX are live.
+// NSE allIndices — exchange-authoritative for Nifty 50 + India VIX. Needs a
+// session cookie from the homepage; we cache it module-side to avoid warming up
+// on every poll (serverless instances stay warm between requests).
+const NSE_HOME = "https://www.nseindia.com/";
+const NSE_ALL_INDICES = "https://www.nseindia.com/api/allIndices";
+const NSE_COOKIE_TTL = 10 * 60 * 1000;
+const NSE_PICKS = [
+  ["NIFTY 50", "Nifty 50", false],
+  ["INDIA VIX", "India VIX", true],
+];
+let nseCookie = { value: "", ts: 0 };
+
+// BSE's own IndexMovers feed (index 16 = S&P BSE SENSEX). Reachable from a plain
+// server fetch (incl. Vercel) with a Referer header. Exchange-authoritative.
+const BSE_SENSEX_URL =
+  "https://api.bseindia.com/BseIndiaAPI/api/IndexMovers/w?cat=Top&indexcode=16&orderby=";
+
+// Yahoo fallback (Nifty/VIX only) — used only when NSE is unreachable.
 const YAHOO_INDICES = [
   { sym: "%5ENSEI", label: "Nifty 50", decimals: 2, invert: false },
   { sym: "%5EINDIAVIX", label: "India VIX", decimals: 2, invert: true },
 ];
-
-// BSE's own IndexMovers feed (index 16 = S&P BSE SENSEX). Reachable from plain
-// server-side fetch (incl. Vercel) with a Referer header — unlike NSE, which
-// needs a real Chrome TLS fingerprint. Exchange-authoritative + live.
-const BSE_SENSEX_URL =
-  "https://api.bseindia.com/BseIndiaAPI/api/IndexMovers/w?cat=Top&indexcode=16&orderby=";
 
 let cache = { ts: 0, data: null, source: null };
 
@@ -60,6 +72,68 @@ function fetchLive() {
       }
     );
   });
+}
+
+// Warm (and cache) an NSE session cookie from the homepage. NSE's Akamai gate
+// sets cookies even on its 403 challenge, and the JSON API accepts them — so one
+// warmup unlocks subsequent allIndices calls. Cached module-side for NSE_COOKIE_TTL.
+async function nseWarmup() {
+  if (nseCookie.value && Date.now() - nseCookie.ts < NSE_COOKIE_TTL) return nseCookie.value;
+  try {
+    const w = await fetch(NSE_HOME, {
+      cache: "no-store",
+      headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    });
+    const jar = (w.headers.getSetCookie?.() || []).map((c) => c.split(";")[0]).join("; ");
+    if (jar) nseCookie = { value: jar, ts: Date.now() };
+  } catch {
+    /* keep any prior cookie */
+  }
+  return nseCookie.value;
+}
+
+// NSE allIndices -> Nifty 50 + India VIX tiles. Exchange-authoritative: `last` +
+// `variation` (point change) + `percentChange` come straight from NSE. Returns a
+// {label: tile} map, or null if NSE is unreachable (Vercel IP blocked, etc.).
+async function fetchNseIndices() {
+  try {
+    const cookie = await nseWarmup();
+    if (!cookie) return null;
+    const r = await fetch(NSE_ALL_INDICES, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": UA,
+        Accept: "application/json",
+        Referer: NSE_HOME,
+        Cookie: cookie,
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    });
+    if (!r.ok) {
+      nseCookie = { value: "", ts: 0 }; // force a fresh warmup next time
+      return null;
+    }
+    const data = (await r.json())?.data;
+    if (!Array.isArray(data)) return null;
+    const out = {};
+    for (const [key, label, invert] of NSE_PICKS) {
+      const row = data.find((d) => (d.index || "").toUpperCase() === key);
+      if (row && row.last != null) {
+        out[label] = {
+          label,
+          last: +Number(row.last).toFixed(2),
+          pct: row.percentChange != null ? +Number(row.percentChange).toFixed(2) : null,
+          change: row.variation != null ? +Number(row.variation).toFixed(2) : null,
+          decimals: 2,
+          invert,
+        };
+      }
+    }
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchYahooOne({ sym, label, decimals, invert }) {
@@ -121,17 +195,22 @@ async function fetchBseSensex() {
   }
 }
 
-// Tier 2: live web sources reachable from anywhere (incl. Vercel) — Nifty/VIX
-// from Yahoo, Sensex from BSE. Assembled in the dashboard's display order
-// (Nifty, Sensex, India VIX); any tile that fails is simply dropped.
+// Tier 2: live exchange APIs fetched directly (works on Vercel). Nifty 50 +
+// India VIX from NSE, Sensex from BSE — both exchange-authoritative. Yahoo is a
+// fallback only for whichever of Nifty/VIX NSE didn't return. Assembled in the
+// dashboard's display order (Nifty, Sensex, India VIX).
 async function fetchLiveWeb() {
-  const [yahoo, sensex] = await Promise.all([
-    Promise.all(YAHOO_INDICES.map(fetchYahooOne)),
-    fetchBseSensex(),
-  ]);
+  const [nse, sensex] = await Promise.all([fetchNseIndices(), fetchBseSensex()]);
   const by = {};
-  for (const t of yahoo) if (t) by[t.label] = t;
+  if (nse) Object.assign(by, nse);
   if (sensex) by[sensex.label] = sensex;
+
+  // Yahoo only fills NSE gaps (e.g. if NSE blocked the datacenter IP).
+  if (!by["Nifty 50"] || !by["India VIX"]) {
+    const yahoo = await Promise.all(YAHOO_INDICES.map(fetchYahooOne));
+    for (const t of yahoo) if (t && !by[t.label]) by[t.label] = t;
+  }
+
   const tiles = ["Nifty 50", "Sensex", "India VIX"].map((l) => by[l]).filter(Boolean);
   return tiles.length ? tiles : null;
 }
