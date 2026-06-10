@@ -1,5 +1,5 @@
 import InfoDot from "./InfoDot";
-import CorpNarrative, { StockThesis } from "./CorpNarrative";
+import CorpNarrative, { StockThesis, IntelligenceVerdict } from "./CorpNarrative";
 import { finMargins } from "../lib/corpNarrative";
 
 const setupTone = (v) =>
@@ -115,6 +115,9 @@ export default function ManagementSummary({ corp }) {
         </h2>
         <span className="text-[11px] text-muted">From NSE/BSE corporate disclosures</span>
       </div>
+
+      {/* weighted intelligence verdict — crowns the read */}
+      <IntelligenceVerdict corp={corp} className="mb-4" />
 
       {/* plain-English synthesis of everything below */}
       <CorpNarrative corp={corp} className="mb-4" />

@@ -302,3 +302,162 @@ export function stockThesis(corp) {
 
   return { support, watch, context };
 }
+
+// ---------------------------------------------------------------------------
+// Intelligence synthesis. Where stockThesis *lists* factors, this *reconciles*
+// them: every signal is weighted into one normalised stance in [-1, 1], a
+// confidence is derived from how many independent signals agree, and — the
+// genuinely useful part — material disagreement between fundamentals and the
+// tape (or the setup and the model) is surfaced as an explicit "tension" rather
+// than silently averaged away. Still fully deterministic and transparent: every
+// number traces back to a field already in the payload. No LLM, no advice.
+const clamp = (x, lo = -1, hi = 1) => Math.max(lo, Math.min(hi, x));
+
+const VERDICT_STRENGTH = {
+  "Delivered strong": 1, Positive: 0.6, Mixed: -0.3, Disappointed: -0.9,
+};
+
+export function stockIntelligence(corp) {
+  if (!corp) return null;
+  // Each factor: { key, group, w (importance), s (signed strength in [-1,1]),
+  // pos (driver phrase), neg (risk phrase) }.
+  const F = [];
+  const add = (key, group, w, s, pos, neg) =>
+    F.push({ key, group, w, s: clamp(s), pos, neg });
+
+  const fin = corp.financials;
+  if (fin) {
+    if (fin.revenue_yoy != null)
+      add("rev", "fundamentals", 0.8, fin.revenue_yoy / 40, "revenue growth", "a revenue decline");
+    if (fin.pat_yoy != null)
+      add("pat", "fundamentals", 1.2, fin.pat_yoy / 50, "profit growth", "falling profit");
+    const m = finMargins(fin);
+    if (m?.patMarginYoY != null)
+      add("margin", "fundamentals", 1.0, m.patMarginYoY / 5, "margin expansion", "margin compression");
+    else if (m?.patMargin != null)
+      add("margin", "fundamentals", 0.5, (m.patMargin - 8) / 12, "a healthy margin", "a thin margin");
+  }
+  if (corp.setup != null)
+    add("setup", "positioning", 1.0, (corp.setup - 50) / 30, "constructive accumulation", "soft accumulation");
+  if (corp.lean_prob != null)
+    add("lean", "positioning", 0.8, (corp.lean_prob - 50) / 25, "a positive model lean", "a cautious model lean");
+  const vd = corp.verdict;
+  if (vd?.label && VERDICT_STRENGTH[vd.label] != null) {
+    const lbl = { "Delivered strong": "a strong market reception", Positive: "a constructive reception",
+                  Mixed: "a mixed reaction", Disappointed: "a soft market reaction" };
+    add("verdict", "tape", 1.1, VERDICT_STRENGTH[vd.label], lbl[vd.label], lbl[vd.label]);
+  }
+  const tl = corp.timeline || [];
+  if (tl.length) {
+    const pos = tl.filter((a) => (a.polarity || 0) > 0).length;
+    const neg = tl.filter((a) => (a.polarity || 0) < 0).length;
+    if (pos !== neg)
+      add("tone", "disclosure", 0.5, (pos - neg) / 4, "constructive disclosures", "cautionary disclosures");
+  }
+  const pdf = corp.pdf;
+  if (pdf?.triggers?.length) {
+    const net = pdf.triggers.reduce((a, t) => a + (t.polarity > 0 ? 1 : -1), 0);
+    if (net !== 0)
+      add("pdf", "filing", 0.9, net / 3, "a constructive filing read", "an adverse filing read");
+  }
+
+  const totalW = F.reduce((a, f) => a + f.w, 0);
+  if (!F.length || totalW < 0.5) return null;
+
+  const net = F.reduce((a, f) => a + f.w * f.s, 0);
+  const normalized = net / totalW; // [-1, 1]
+
+  // Conflict mass: weighted magnitude pushing each way.
+  const posMass = F.filter((f) => f.s > 0).reduce((a, f) => a + f.w * f.s, 0);
+  const negMass = F.filter((f) => f.s < 0).reduce((a, f) => a - f.w * f.s, 0);
+  const conflicted = posMass >= 0.22 * totalW && negMass >= 0.22 * totalW && Math.abs(normalized) < 0.16;
+
+  // Stance label.
+  let label, tone;
+  if (conflicted) { label = "Conflicted"; tone = "text-amber-400"; }
+  else if (normalized >= 0.34) { label = "Constructive"; tone = "text-up"; }
+  else if (normalized >= 0.12) { label = "Leans constructive"; tone = "text-up"; }
+  else if (normalized > -0.12) { label = "Balanced"; tone = "text-muted"; }
+  else if (normalized > -0.34) { label = "Leans cautious"; tone = "text-down"; }
+  else { label = "Cautious"; tone = "text-down"; }
+
+  // Confidence = signal coverage × directional agreement, softened when conflicted.
+  const sign = normalized >= 0 ? 1 : -1;
+  const agreeW = F.filter((f) => Math.sign(f.s) === sign).reduce((a, f) => a + f.w, 0);
+  const agreement = totalW ? agreeW / totalW : 0;
+  const coverage = clamp(totalW / 4, 0, 1);
+  let conf = agreement * coverage;
+  if (conflicted) conf *= 0.6;
+  const confPct = Math.round(conf * 100);
+  const confLabel = conf >= 0.66 ? "High" : conf >= 0.42 ? "Moderate" : "Low";
+
+  // Drivers / risks — strongest contributors each way (dedupe by phrase).
+  const byMag = (a, b) => b.w * Math.abs(b.s) - a.w * Math.abs(a.s);
+  const drivers = F.filter((f) => f.s > 0).sort(byMag).slice(0, 2).map((f) => f.pos);
+  const risks = F.filter((f) => f.s < 0).sort(byMag).slice(0, 2).map((f) => f.neg);
+
+  // --- synthesis sentence (spans) ---
+  const name = corp.company || corp.symbol || "This name";
+  const synthesis = [{ t: name, c: "text-white font-semibold" }, { t: " reads " },
+                     { t: label.toLowerCase(), c: tone }];
+  if (drivers.length) {
+    synthesis.push({ t: " — carried by " }, { t: joinNice(drivers), c: "text-up" });
+    if (risks.length) synthesis.push({ t: ", though weighed by " }, { t: joinNice(risks), c: "text-down" });
+  } else if (risks.length) {
+    synthesis.push({ t: " — weighed by " }, { t: joinNice(risks), c: "text-down" });
+  }
+  synthesis.push({ t: "." });
+
+  // --- tension: the most salient fundamentals-vs-tape style disagreement ---
+  const g = (name2) => F.filter((f) => f.group === name2);
+  const groupMean = (name2) => {
+    const arr = g(name2);
+    if (!arr.length) return null;
+    return arr.reduce((a, f) => a + f.w * f.s, 0) / arr.reduce((a, f) => a + f.w, 0);
+  };
+  const fund = groupMean("fundamentals");
+  const tape = g("tape").length ? g("tape")[0].s : null;
+  const setupF = F.find((f) => f.key === "setup");
+  const leanF = F.find((f) => f.key === "lean");
+  const filing = g("filing").length ? g("filing")[0].s : null;
+
+  let tension = null;
+  if (fund != null && tape != null && fund >= 0.25 && tape <= -0.3) {
+    tension = [{ t: "Tension: ", c: "text-amber-400 font-semibold" },
+               { t: "the numbers came in firm, but the tape " },
+               { t: "faded the print", c: "text-down" },
+               { t: " — the market may be discounting the quarter or looking past it." }];
+  } else if (fund != null && tape != null && fund <= -0.25 && tape >= 0.3) {
+    tension = [{ t: "Tension: ", c: "text-amber-400 font-semibold" },
+               { t: "fundamentals softened, yet the reaction was " },
+               { t: "constructive", c: "text-up" },
+               { t: " — buyers may be pricing a turn ahead of the financials." }];
+  } else if (setupF && leanF && setupF.s >= 0.3 && leanF.s <= -0.3) {
+    tension = [{ t: "Tension: ", c: "text-amber-400 font-semibold" },
+               { t: "accumulation looks " }, { t: "constructive", c: "text-up" },
+               { t: " while the model " }, { t: "leans cautious", c: "text-down" },
+               { t: " — positioning and the signal disagree." }];
+  } else if (setupF && leanF && setupF.s <= -0.3 && leanF.s >= 0.3) {
+    tension = [{ t: "Tension: ", c: "text-amber-400 font-semibold" },
+               { t: "the model " }, { t: "leans positive", c: "text-up" },
+               { t: " but accumulation is still " }, { t: "soft", c: "text-down" },
+               { t: " — the edge isn't confirmed by flow yet." }];
+  } else if (filing != null && tape != null && filing >= 0.3 && tape <= -0.3) {
+    tension = [{ t: "Tension: ", c: "text-amber-400 font-semibold" },
+               { t: "the filing reads " }, { t: "constructive", c: "text-up" },
+               { t: " but the reaction was " }, { t: "soft", c: "text-down" }, { t: "." }];
+  } else if (conflicted) {
+    tension = [{ t: "Signals are pulling both ways", c: "text-amber-400 font-semibold" },
+               { t: " — roughly balanced support and risk, so the net read is low-conviction." }];
+  }
+
+  return { stance: { label, tone, normalized }, confidence: { label: confLabel, pct: confPct },
+           drivers, risks, synthesis, tension, factors: F.length };
+}
+
+// Oxford-ish join: ["a", "b"] -> "a and b"; ["a","b","c"] -> "a, b and c".
+function joinNice(arr) {
+  if (!arr.length) return "";
+  if (arr.length === 1) return arr[0];
+  return `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
+}

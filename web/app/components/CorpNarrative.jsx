@@ -1,7 +1,57 @@
-import { stockNarrative, marketNarrative, stockThesis } from "../lib/corpNarrative";
+import { stockNarrative, marketNarrative, stockThesis, stockIntelligence } from "../lib/corpNarrative";
 
 const Spans = ({ spans }) =>
   spans.map((sp, i) => (sp.c ? <span key={i} className={sp.c}>{sp.t}</span> : <span key={i}>{sp.t}</span>));
+
+// Crown of the summary: the weighted synthesis. Reconciles every corp signal
+// into one stance + confidence, names the drivers/risks, and — when they
+// disagree — surfaces the tension instead of averaging it away.
+const STANCE_CHIP = {
+  Constructive: "chip-up",
+  "Leans constructive": "chip-up",
+  Balanced: "bg-line/40 text-muted",
+  Conflicted: "bg-amber-500/15 text-amber-400",
+  "Leans cautious": "chip-down",
+  Cautious: "chip-down",
+};
+const CONF_TONE = { High: "text-up", Moderate: "text-accent", Low: "text-muted" };
+const CONF_BAR = { High: "#16c784", Moderate: "#5b8cff", Low: "#8a96ab" };
+
+export function IntelligenceVerdict({ corp, className = "" }) {
+  const iq = stockIntelligence(corp);
+  if (!iq) return null;
+  const { stance, confidence, synthesis, tension, factors } = iq;
+  return (
+    <div className={`rounded-xl border border-accent/30 bg-gradient-to-br from-accent/[0.08] to-transparent p-4 ${className}`}>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] uppercase tracking-wide text-accent font-semibold">Intelligence read</span>
+          <span className={`chip text-[11px] ${STANCE_CHIP[stance.label] || "bg-line/40 text-muted"}`}>
+            {stance.label}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-muted">Confidence</span>
+          <div className="h-1.5 w-16 rounded-full bg-line/60 overflow-hidden">
+            <div className="h-full rounded-full"
+              style={{ width: `${confidence.pct}%`, background: CONF_BAR[confidence.label] }} />
+          </div>
+          <span className={`text-[11px] font-semibold ${CONF_TONE[confidence.label]}`}>{confidence.label}</span>
+        </div>
+      </div>
+      <p className="text-sm leading-relaxed text-muted"><Spans spans={synthesis} /></p>
+      {tension && (
+        <p className="mt-2 text-[13px] leading-snug rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2">
+          <Spans spans={tension} />
+        </p>
+      )}
+      <p className="text-[10px] text-muted/70 mt-2">
+        Weighted across {factors} signal{factors === 1 ? "" : "s"} — a transparent synthesis of data already shown
+        below, <span className="text-muted">not investment advice</span>.
+      </p>
+    </div>
+  );
+}
 
 // Per-stock plain-English summary paragraph (Management & Financial panel).
 export default function CorpNarrative({ corp, className = "" }) {
