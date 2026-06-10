@@ -1,6 +1,6 @@
 import InfoDot from "./InfoDot";
 import CorpNarrative, { StockThesis, IntelligenceVerdict } from "./CorpNarrative";
-import { PdfRead, FilingsOverview } from "./PdfFilings";
+import { PdfRead, PdfLiveRead, FilingsOverview } from "./PdfFilings";
 import { finMargins } from "../lib/corpNarrative";
 
 const setupTone = (v) =>
@@ -191,8 +191,11 @@ export default function ManagementSummary({ corp }) {
                 <div className="min-w-0 flex-1">
                   <span className="text-white/90">{a.headline || "—"}</span>
                   {a.attachment && !a.pdf && (
-                    <a href={a.attachment} target="_blank" rel="noopener noreferrer"
-                      className="text-accent text-[11px] ml-1.5 hover:underline whitespace-nowrap">PDF ↗</a>
+                    <>
+                      <a href={a.attachment} target="_blank" rel="noopener noreferrer"
+                        className="text-accent text-[11px] ml-1.5 hover:underline whitespace-nowrap">PDF ↗</a>
+                      <PdfLiveRead attachment={a.attachment} />
+                    </>
                   )}
                   <PdfRead pdf={a.pdf} attachment={a.attachment} />
                 </div>
