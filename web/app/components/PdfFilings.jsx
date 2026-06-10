@@ -54,18 +54,40 @@ const TriggerChip = ({ t }) => (
   </span>
 );
 
-// Live, in-browser "advanced read". The button fetches the actual filing PDF
-// (via a server proxy that warms an NSE session and extracts text), then runs
-// the deterministic lexicon scan client-side — surfacing the document type,
-// net tone, the key signal words (with any monetary figures) and the literal
-// sentences that drove the read, with the matched terms highlighted.
-export function PdfLiveRead({ attachment }) {
+// Small, consistent section label used across every read body so the cached
+// and live panels share one visual rhythm.
+const FieldLabel = ({ children }) => (
+  <div className="text-[9px] uppercase tracking-wider text-muted/70 font-semibold">{children}</div>
+);
+
+const Spinner = ({ className = "" }) => (
+  <span className={`inline-block rounded-full border-[1.5px] border-accent border-t-transparent animate-spin ${className || "w-3 h-3"}`} />
+);
+
+// A quoted line from the filing with a polarity-coloured left rule and the
+// matched signal terms highlighted. Used for both cached excerpts and the live
+// read's key sentences, keeping them visually identical.
+function Quote({ text, marks, polarity = 0 }) {
+  const rule = polarity > 0 ? "border-up/60" : polarity < 0 ? "border-down/60" : "border-line";
+  return (
+    <p className={`border-l-2 ${rule} pl-2 text-[11px] text-muted/90 leading-relaxed`}>
+      <Highlighted text={text} marks={marks} />
+    </p>
+  );
+}
+
+const toneChipClass = (sentiment) => PDF_TONE[sentiment] || "bg-line/40 text-muted";
+
+// Fetch the actual filing PDF (server proxy warms an NSE session, extracts the
+// text layer, and OCRs scanned English filings) and run the deterministic
+// lexicon scan in the browser. Shared by the per-filing card below.
+function useLiveRead(attachment) {
   const [status, setStatus] = useState("idle"); // idle | loading | done | error
   const [res, setRes] = useState(null);
   const [err, setErr] = useState("");
-  if (!attachment) return null;
 
   async function run() {
+    if (!attachment) return;
     setStatus("loading");
     setErr("");
     try {
@@ -78,8 +100,7 @@ export function PdfLiveRead({ attachment }) {
         setStatus("error");
         return;
       }
-      const analysis = analyzePdfText(data.text);
-      setRes({ ...analysis, nPages: data.nPages, ocr: data.ocr });
+      setRes({ ...analyzePdfText(data.text), nPages: data.nPages, ocr: data.ocr });
       setStatus("done");
     } catch (e) {
       setErr(e?.message || "Could not read this filing.");
@@ -87,172 +108,172 @@ export function PdfLiveRead({ attachment }) {
     }
   }
 
-  const toneClass = res
-    ? PDF_TONE[res.sentiment] || "bg-line/40 text-muted"
-    : "bg-line/40 text-muted";
+  return { status, res, err, run };
+}
+
+// The body of a completed/loading/errored live read. Mirrors the cached body's
+// label → chips → quotes rhythm for symmetry.
+function LiveReadBody({ status, res, err }) {
+  if (status === "loading") {
+    return (
+      <div className="flex items-center gap-2 text-[11px] text-muted/80">
+        <Spinner />
+        <span>Reading the filing…</span>
+        <span className="text-muted/45">fetching &amp; analysing the PDF in your browser</span>
+      </div>
+    );
+  }
+  if (status === "error") return <p className="text-[11px] text-down/90 leading-snug">{err}</p>;
+  if (status !== "done" || !res) return null;
 
   return (
-    <>
-      {status !== "done" && (
-        <button
-          type="button"
-          onClick={run}
-          disabled={status === "loading"}
-          title="Fetch the PDF and analyse it in your browser"
-          className="inline-flex items-center gap-1 align-middle text-[10px] font-semibold text-accent hover:underline disabled:opacity-60 whitespace-nowrap"
-        >
-          {status === "loading" ? (
-            <>
-              <span className="inline-block w-2.5 h-2.5 rounded-full border border-accent border-t-transparent animate-spin" />
-              reading…
-            </>
-          ) : (
-            <>⚡ Advanced read</>
-          )}
-        </button>
-      )}
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[9px] uppercase tracking-wider text-accent font-semibold">Advanced read</span>
+        {res.docType && <span className="chip text-[9px] bg-accent/15 text-accent">{res.docType}</span>}
+        {res.sentiment && <span className={`chip text-[9px] ${toneChipClass(res.sentiment)}`}>{res.sentiment} tone</span>}
+        {res.ocr && (
+          <span className="chip text-[9px] bg-amber-500/15 text-amber-400" title="Text recovered from a scanned image via OCR">OCR</span>
+        )}
+        <span className="ml-auto text-[9px] text-muted/55 whitespace-nowrap">
+          in your browser{res.nPages ? ` · ${res.nPages} pp` : ""}
+        </span>
+      </div>
 
-      {status === "error" && (
-        <p className="w-full basis-full text-[11px] text-down/90 leading-snug mt-1">{err}</p>
-      )}
-
-      {status === "done" && res && (
-        <div className="w-full basis-full rounded-lg border border-accent/25 bg-accent/[0.05] p-2.5 mt-1.5">
-          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-            <span className="text-[9px] uppercase tracking-wide text-accent font-semibold">
-              Advanced read
-            </span>
-            {res.docType && (
-              <span className="chip text-[9px] bg-accent/15 text-accent">{res.docType}</span>
-            )}
-            {res.sentiment && (
-              <span className={`chip text-[9px] ${toneClass}`}>{res.sentiment} tone</span>
-            )}
-            {res.ocr && (
-              <span className="chip text-[9px] bg-amber-500/15 text-amber-400" title="Text recovered from a scanned image via OCR">OCR</span>
-            )}
-            <span className="ml-auto text-[9px] text-muted/70">
-              read in your browser{res.nPages ? ` · ${res.nPages} pp` : ""}
-            </span>
+      {res.keyWords.length > 0 ? (
+        <div className="space-y-1">
+          <FieldLabel>Key signals</FieldLabel>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {res.keyWords.map((w, i) => <TriggerChip key={i} t={w} />)}
           </div>
+        </div>
+      ) : (
+        <p className="text-[11px] text-muted/80 leading-snug">No directional language detected — reads as neutral.</p>
+      )}
 
-          {res.keyWords.length > 0 ? (
-            <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-              <span className="text-[9px] uppercase tracking-wide text-muted">Key signals</span>
-              {res.keyWords.map((w, i) => (
-                <TriggerChip key={i} t={w} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-[11px] text-muted/80 leading-snug mb-1.5">
-              No directional language detected — reads as neutral.
-            </p>
-          )}
-
-          {res.keySentences.length > 0 && (
-            <>
-              <span className="text-[9px] uppercase tracking-wide text-muted">Key sentences</span>
-              <ul className="mt-1 space-y-1">
-                {res.keySentences.map((s, i) => (
-                  <li key={i} className="flex gap-1.5 text-[11px] text-muted/90 leading-snug">
-                    <span
-                      className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
-                        s.polarity > 0 ? "bg-up" : s.polarity < 0 ? "bg-down" : "bg-muted"
-                      }`}
-                    />
-                    <span>
-                      <span className="text-muted/60">“</span>
-                      <Highlighted text={s.text} marks={s.marks} />
-                      <span className="text-muted/60">”</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          <p className="text-[9px] text-muted/60 mt-2">
-            Literal scan of words present in the filing — not investment advice.
-          </p>
+      {res.keySentences.length > 0 && (
+        <div className="space-y-1.5">
+          <FieldLabel>Key sentences</FieldLabel>
+          <div className="space-y-1.5">
+            {res.keySentences.map((s, i) => (
+              <Quote key={i} text={s.text} marks={s.marks} polarity={s.polarity} />
+            ))}
+          </div>
         </div>
       )}
-    </>
+
+      <p className="text-[9px] text-muted/50 leading-snug">
+        Literal scan of words present in the filing — not investment advice.
+      </p>
+    </div>
   );
 }
 
-// Collapsible "Read from PDF" for a single filing. Button (closed) → filing-type
-// + sentiment chips + the trigger labels; expanded → trigger chips (with any
-// amounts) and the extracted snippets that drove them, plus a link to open the
-// document. Renders for every readable filing (neutral ones say so honestly).
+// Unified per-filing card. Every announcement that carries a PDF renders the
+// same bordered bar: an identity label + (when available) the cached read's
+// type/tone/signal chips on the left, and the document link + a small
+// "Advanced read" trigger on the right. Expanding the cached read or running
+// the live read reveals a full-width body section with matching structure, so
+// the whole timeline reads as one symmetric system.
 export function PdfRead({ pdf, attachment }) {
   const [open, setOpen] = useState(false);
-  if (!pdf) return null;
-  const trg = pdf.triggers || [];
-  const sentiment = pdf.sentiment || (trg.length ? null : "Neutral");
+  const live = useLiveRead(attachment);
+  if (!pdf && !attachment) return null;
+
+  const hasCached = Boolean(pdf);
+  const trg = (pdf && pdf.triggers) || [];
+  const sentiment = pdf ? pdf.sentiment || (trg.length ? null : "Neutral") : null;
   const snippets = trg.filter((t) => t.snippet);
+  const liveOpen = live.status !== "idle";
 
   return (
-    <div className="mt-1.5 rounded-lg border border-line/60 bg-ink/30">
-      <div className="flex items-center gap-1.5 flex-wrap px-2.5 py-1.5">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1.5 text-[9px] uppercase tracking-wide text-muted font-semibold hover:text-white transition-colors"
-          aria-expanded={open}
-        >
-          <span className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
-          Read from PDF
-        </button>
-        {pdf.doc_type && (
-          <span className="chip text-[9px] bg-accent/15 text-accent">{pdf.doc_type}</span>
-        )}
-        {sentiment && (
-          <span className={`chip text-[9px] ${PDF_TONE[sentiment] || "bg-line/40 text-muted"}`}>
-            {sentiment} tone
+    <div className="mt-1.5 rounded-lg border border-line/60 bg-ink/30 overflow-hidden">
+      {/* header bar */}
+      <div className="flex items-center gap-x-1.5 gap-y-1 flex-wrap px-2.5 py-1.5">
+        {hasCached ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-muted font-semibold hover:text-white transition-colors"
+            aria-expanded={open}
+          >
+            <span className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
+            Read from PDF
+          </button>
+        ) : (
+          <span className="flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-muted/80 font-semibold">
+            <span className="text-muted/40">▪</span>
+            Filing PDF
           </span>
         )}
-        {!open && trg.slice(0, 4).map((t, i) => <TriggerChip key={i} t={t} />)}
-        {!open && trg.length > 4 && <span className="text-[9px] text-muted">+{trg.length - 4}</span>}
-        {attachment && (
-          <a
-            href={attachment}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto text-accent text-[10px] hover:underline whitespace-nowrap"
-          >
-            View document ↗
-          </a>
-        )}
-        {/* small live-read button beside the document link; its result panel
-            wraps to its own full-width line below (basis-full) */}
-        {attachment && (
-          <>
-            <span className="text-line/60 text-[10px]">·</span>
-            <PdfLiveRead attachment={attachment} />
-          </>
-        )}
+
+        {pdf?.doc_type && <span className="chip text-[9px] bg-accent/15 text-accent">{pdf.doc_type}</span>}
+        {sentiment && <span className={`chip text-[9px] ${toneChipClass(sentiment)}`}>{sentiment} tone</span>}
+        {hasCached && !open && trg.slice(0, 4).map((t, i) => <TriggerChip key={i} t={t} />)}
+        {hasCached && !open && trg.length > 4 && <span className="text-[9px] text-muted">+{trg.length - 4}</span>}
+
+        {/* right actions — document link + live-read trigger, kept together */}
+        <div className="ml-auto flex items-center gap-1.5 whitespace-nowrap">
+          {attachment && (
+            <a
+              href={attachment}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent text-[10px] hover:underline"
+            >
+              View document ↗
+            </a>
+          )}
+          {attachment && (live.status === "idle" || live.status === "error") && (
+            <>
+              <span className="text-line/60 text-[10px]">·</span>
+              <button
+                type="button"
+                onClick={live.run}
+                title="Fetch the PDF and analyse it in your browser"
+                className="inline-flex items-center gap-1 text-[10px] font-semibold text-accent hover:underline"
+              >
+                ⚡ {live.status === "error" ? "Retry" : "Advanced read"}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      {open && (
-        <div className="px-2.5 pb-2 pt-0.5 border-t border-line/40">
+      {/* cached read body */}
+      {hasCached && open && (
+        <div className="px-2.5 pb-2.5 pt-2 border-t border-line/40 space-y-2.5">
           {trg.length ? (
             <>
-              <div className="flex items-center gap-1.5 flex-wrap my-1.5">
-                {trg.map((t, i) => <TriggerChip key={i} t={t} />)}
+              <div className="space-y-1">
+                <FieldLabel>Signals</FieldLabel>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {trg.map((t, i) => <TriggerChip key={i} t={t} />)}
+                </div>
               </div>
-              {snippets.map((t, i) => (
-                <p key={i} className="text-[11px] text-muted/90 leading-snug mt-1">
-                  <span className="text-muted/60">“</span>
-                  {t.snippet}
-                  <span className="text-muted/60">”</span>
-                </p>
-              ))}
+              {snippets.length > 0 && (
+                <div className="space-y-1.5">
+                  <FieldLabel>Excerpts</FieldLabel>
+                  <div className="space-y-1.5">
+                    {snippets.map((t, i) => (
+                      <Quote key={i} text={t.snippet} polarity={t.polarity} marks={[t.phrase, t.amount].filter(Boolean)} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           ) : (
-            <p className="text-[11px] text-muted/80 leading-snug mt-1.5">
+            <p className="text-[11px] text-muted/80 leading-snug">
               No directional language detected in this filing — read as neutral.
             </p>
           )}
+        </div>
+      )}
+
+      {/* live read body */}
+      {liveOpen && (
+        <div className="px-2.5 pb-2.5 pt-2 border-t border-line/40 bg-accent/[0.03]">
+          <LiveReadBody status={live.status} res={live.res} err={live.err} />
         </div>
       )}
     </div>
