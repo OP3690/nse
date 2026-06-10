@@ -671,20 +671,22 @@ def build_payload(con, by_symbol: dict, today: dt.date | None = None) -> tuple[d
                  "SELECT * FROM corp_announcements WHERE an_dt >= ? ORDER BY an_dt DESC",
                  (recent_cut,))
 
-    # PDF-trigger reads, keyed by attachment URL. Keep only documents that
-    # actually yielded at least one trigger (skip scanned/empty/neutral-blank).
+    # PDF reads, keyed by attachment URL. Surface every document that yielded
+    # extractable text (has_text=1) — including neutral, no-trigger filings — so
+    # the UI can show a "Read from PDF" panel for *every* readable document and
+    # aggregate them into an overall filings summary. Scanned/image-only PDFs
+    # (no embedded text) carry nothing and are skipped.
     pdf_by_url: dict[str, dict] = {}
-    for r in _rows(con, "SELECT * FROM corp_pdf_analysis WHERE ok = 1"):
+    for r in _rows(con, "SELECT * FROM corp_pdf_analysis WHERE ok = 1 AND has_text = 1"):
         try:
             trg = json.loads(r.get("triggers") or "[]")
         except (ValueError, TypeError):
             trg = []
-        if not trg:
-            continue
         pdf_by_url[r["attachment"]] = {
             "sentiment": r.get("sentiment"), "score": r.get("score"),
             "n_pos": r.get("n_pos"), "n_neg": r.get("n_neg"),
             "triggers": trg, "excerpt": r.get("excerpt") or "",
+            "n_pages": r.get("n_pages"),
         }
 
     # --- per-symbol summaries (only for symbols we have a live entry for) -----
@@ -701,9 +703,11 @@ def build_payload(con, by_symbol: dict, today: dt.date | None = None) -> tuple[d
         ev = [a for a in anns if a["symbol"] == sym and a["category"] in _EVENT_CATS]
         vd = verdict(e, fin) if (ev or fin) else None
         timeline = [_ann_view(a, pdf_by_url) for a in ev[:10]]
-        # Most-recent filing whose PDF yielded a trigger read — the headline
-        # "what the document actually says" signal for this name.
-        pdf_read = next((t["pdf"] for t in timeline if t.get("pdf")), None)
+        # Most-recent filing whose PDF yielded an actual trigger read — the
+        # headline "what the document says" signal (neutral reads carry no
+        # direction, so they're skipped for this single-doc pick).
+        pdf_read = next((t["pdf"] for t in timeline
+                         if t.get("pdf") and t["pdf"].get("triggers")), None)
         summaries[sym] = {
             "symbol": sym,
             "company": e.get("company") or (fin or {}).get("company"),

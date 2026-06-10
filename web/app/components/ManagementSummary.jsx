@@ -1,5 +1,6 @@
 import InfoDot from "./InfoDot";
 import CorpNarrative, { StockThesis, IntelligenceVerdict } from "./CorpNarrative";
+import { PdfRead, FilingsOverview } from "./PdfFilings";
 import { finMargins } from "../lib/corpNarrative";
 
 const setupTone = (v) =>
@@ -24,39 +25,6 @@ const KIND_TONE = {
   "M&A": "bg-[#c77dff]/15 text-[#c77dff]",
 };
 const POLARITY_DOT = (p) => (p > 0 ? "bg-up" : p < 0 ? "bg-down" : "bg-muted");
-const PDF_TONE = {
-  Positive: "chip-up",
-  Negative: "chip-down",
-  Neutral: "bg-amber-500/15 text-amber-400",
-};
-
-// The lexicon read of a filing's PDF: a sentiment chip, the matched trigger
-// labels, and the actual extracted text snippets that drove them.
-function PdfTriggers({ pdf }) {
-  if (!pdf || !pdf.triggers?.length) return null;
-  return (
-    <div className="mt-1.5 rounded-lg border border-line/60 bg-ink/30 px-2.5 py-2">
-      <div className="flex items-center gap-1.5 flex-wrap mb-1">
-        <span className="text-[9px] uppercase tracking-wide text-muted font-semibold">Read from PDF</span>
-        {pdf.sentiment && (
-          <span className={`chip text-[9px] ${PDF_TONE[pdf.sentiment] || "bg-line/40 text-muted"}`}>
-            {pdf.sentiment} tone
-          </span>
-        )}
-        {pdf.triggers.map((t, i) => (
-          <span key={i} className={`chip text-[9px] ${t.polarity > 0 ? "chip-up" : "chip-down"}`}>
-            {t.polarity > 0 ? "▲" : "▼"} {t.label}
-          </span>
-        ))}
-      </div>
-      {pdf.triggers.filter((t) => t.snippet).slice(0, 2).map((t, i) => (
-        <p key={i} className="text-[11px] text-muted/90 leading-snug">
-          <span className="text-muted/60">“</span>{t.snippet}<span className="text-muted/60">”</span>
-        </p>
-      ))}
-    </div>
-  );
-}
 
 const fmtCr = (n) =>
   n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })} Cr`;
@@ -207,6 +175,9 @@ export default function ManagementSummary({ corp }) {
         </div>
       )}
 
+      {/* overall read across the latest readable filings */}
+      <FilingsOverview corp={corp} className="mb-4" />
+
       {/* announcement timeline */}
       {!!timeline.length && (
         <div>
@@ -219,11 +190,11 @@ export default function ManagementSummary({ corp }) {
                 <span className="chip text-[10px] shrink-0 bg-line/40 text-muted">{a.category}</span>
                 <div className="min-w-0 flex-1">
                   <span className="text-white/90">{a.headline || "—"}</span>
-                  {a.attachment && (
+                  {a.attachment && !a.pdf && (
                     <a href={a.attachment} target="_blank" rel="noopener noreferrer"
                       className="text-accent text-[11px] ml-1.5 hover:underline whitespace-nowrap">PDF ↗</a>
                   )}
-                  <PdfTriggers pdf={a.pdf} />
+                  <PdfRead pdf={a.pdf} attachment={a.attachment} />
                 </div>
               </div>
             ))}

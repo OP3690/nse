@@ -461,3 +461,57 @@ function joinNice(arr) {
   if (arr.length === 1) return arr[0];
   return `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
 }
+
+// ---------------------------------------------------------------------------
+// Overall read across the latest PDF documents. Aggregates the per-filing
+// lexicon reads attached to the timeline into one tally: how many documents
+// were read, the net positive/negative trigger count, the recurring themes,
+// and a plain-English synthesis. Pure roll-up of data already in the payload.
+export function filingsOverview(corp) {
+  const docs = (corp?.timeline || []).filter((t) => t.pdf);
+  if (!docs.length) return null;
+
+  const posCount = new Map();
+  const negCount = new Map();
+  let nPos = 0, nNeg = 0, nDirectional = 0;
+  for (const d of docs) {
+    const trg = d.pdf.triggers || [];
+    if (trg.length) nDirectional += 1;
+    for (const t of trg) {
+      if (t.polarity > 0) { nPos += 1; posCount.set(t.label, (posCount.get(t.label) || 0) + 1); }
+      else if (t.polarity < 0) { nNeg += 1; negCount.set(t.label, (negCount.get(t.label) || 0) + 1); }
+    }
+  }
+  const topThemes = (m) =>
+    [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label, count]) => ({ label, count }));
+  const posThemes = topThemes(posCount);
+  const negThemes = topThemes(negCount);
+
+  let tone, toneTone, toneChip;
+  if (nPos > nNeg) { tone = "Positive"; toneTone = "text-up"; toneChip = "chip-up"; }
+  else if (nNeg > nPos) { tone = "Negative"; toneTone = "text-down"; toneChip = "chip-down"; }
+  else if (nPos > 0) { tone = "Mixed"; toneTone = "text-amber-400"; toneChip = "bg-amber-500/15 text-amber-400"; }
+  else { tone = "Neutral"; toneTone = "text-muted"; toneChip = "bg-line/40 text-muted"; }
+
+  // dates: timeline is newest-first, so docs[0] is the most recent.
+  const range = { to: docs[0]?.date || null, from: docs[docs.length - 1]?.date || null };
+
+  // synthesis sentence (spans)
+  const n = docs.length;
+  const synthesis = [{ t: `Across the last ${n} readable filing${n === 1 ? "" : "s"}, the documents read ` },
+                     { t: tone.toLowerCase(), c: toneTone }];
+  if (posThemes.length) {
+    synthesis.push({ t: " — recurring positives: " },
+                   { t: joinNice(posThemes.map((x) => x.label.toLowerCase())), c: "text-up" });
+  }
+  if (negThemes.length) {
+    synthesis.push({ t: posThemes.length ? "; watch: " : " — watch: " },
+                   { t: joinNice(negThemes.map((x) => x.label.toLowerCase())), c: "text-down" });
+  }
+  if (!posThemes.length && !negThemes.length)
+    synthesis.push({ t: " — no directional language detected" });
+  synthesis.push({ t: "." });
+
+  return { tone, toneTone, toneChip, nDocs: n, nDirectional, nPos, nNeg,
+           posThemes, negThemes, synthesis, range };
+}
