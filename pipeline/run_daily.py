@@ -54,6 +54,25 @@ def _refresh_shareholding(session_date: dt.date, limit: int = 250) -> None:
         print(f"  shareholding refresh skipped: {e!r}")
 
 
+def _refresh_ipo(session_date: dt.date) -> None:
+    """Refresh IPO feeds — past issues (listing-gain history) and the
+    upcoming/current pipeline. Runs every session: the NSE feeds are "current"
+    rather than date-addressed, and the upcoming table is fully replaced each
+    pass so closed issues drop off. Never fatal: a failure here must not break
+    the daily price/flow run, and it must not depend on local-only backfill."""
+    try:
+        import ipo
+        import store
+        client = NSEClient()
+        con = store.connect()
+        past = ipo.fetch_and_store(con, client)
+        upcoming = ipo.fetch_upcoming(con, client)
+        con.close()
+        print(f"  IPO refresh: {past} past issues, {upcoming} upcoming/current")
+    except Exception as e:  # noqa: BLE001
+        print(f"  IPO refresh skipped: {e!r}")
+
+
 def _refresh_bse_marketcap(session_date: dt.date) -> None:
     """Attach BSE market cap to the NSE universe, best-effort.
 
@@ -104,6 +123,7 @@ def main(date_str: str | None = None):
     session_date = dt.date.fromisoformat(manifest["iso"]) if manifest.get("iso") else dt.date.today()
     _refresh_shareholding(session_date)
     _refresh_bse_marketcap(session_date)
+    _refresh_ipo(session_date)
     analyze.run()
     print("=== done ===")
     return 0
