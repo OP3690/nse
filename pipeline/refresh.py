@@ -76,6 +76,24 @@ def fast_refresh(lookback: int = LOOKBACK) -> int:
     #     mongo.push would overwrite the good cloud doc with that thin payload.
     seed_io.load()
 
+    # 2c) Refresh IPO feeds. The deployed DB only ever runs this fast path — never
+    #     the full daily run — so the optimistic "already in the DB from the last
+    #     full daily run" assumption never holds in the cloud: ipo_issues /
+    #     ipo_upcoming stay empty and IPO Radar renders "No IPO data yet". Both are
+    #     single cheap list calls (the upcoming table is replaced each pass), so we
+    #     fetch them here every run. Best-effort: an IPO hiccup must never break the
+    #     refresh that powers the rest of the dashboard.
+    try:
+        import ipo
+        import store
+        con = store.connect()
+        past = ipo.fetch_and_store(con, client)
+        upcoming = ipo.fetch_upcoming(con, client)
+        con.close()
+        print(f"  IPO refresh: {past} past issues, {upcoming} upcoming/current")
+    except Exception as e:  # noqa: BLE001
+        print(f"  IPO refresh skipped: {e!r}")
+
     # 3) Recompute all signals (incl. KNN Multibagger Radar) + emit JSON + Mongo sync.
     analyze.run()
     print("=== refresh done ===")
