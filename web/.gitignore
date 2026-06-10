@@ -4,3 +4,4 @@ out
 
 # Local HTTPS certs (mkcert)
 certificates/
+*.traineddata
