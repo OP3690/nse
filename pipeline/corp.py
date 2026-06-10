@@ -437,6 +437,7 @@ def refresh_pdf_triggers(con, client, limit: int = 160, days: int = 21) -> int:
             "ok": 1,
             "triggers": json.dumps(res.get("triggers") or []),
             "excerpt": res.get("excerpt") or "",
+            "doc_type": res.get("doc_type"),
         })
     return store.store_corp_pdf(con, out)
 
@@ -686,7 +687,7 @@ def build_payload(con, by_symbol: dict, today: dt.date | None = None) -> tuple[d
             "sentiment": r.get("sentiment"), "score": r.get("score"),
             "n_pos": r.get("n_pos"), "n_neg": r.get("n_neg"),
             "triggers": trg, "excerpt": r.get("excerpt") or "",
-            "n_pages": r.get("n_pages"),
+            "n_pages": r.get("n_pages"), "doc_type": r.get("doc_type"),
         }
 
     # --- per-symbol summaries (only for symbols we have a live entry for) -----

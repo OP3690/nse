@@ -467,19 +467,35 @@ function joinNice(arr) {
 // lexicon reads attached to the timeline into one tally: how many documents
 // were read, the net positive/negative trigger count, the recurring themes,
 // and a plain-English synthesis. Pure roll-up of data already in the payload.
+// Parse a reader amount string ("₹1,200 Cr", "₹500 Lakh") to a crore-equivalent
+// number so figures across filings can be ranked. Returns null when unparseable.
+function amountToCr(s) {
+  if (!s) return null;
+  const m = String(s).match(/([\d,]+(?:\.\d+)?)\s*(Cr|Lakh|Mn|Bn)?/i);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(/,/g, ""));
+  if (!Number.isFinite(n)) return null;
+  const u = (m[2] || "Cr").toLowerCase();
+  return u === "lakh" ? n / 100 : u === "mn" ? n * 8.3 : u === "bn" ? n * 8300 : n;
+}
+
 export function filingsOverview(corp) {
   const docs = (corp?.timeline || []).filter((t) => t.pdf);
   if (!docs.length) return null;
 
   const posCount = new Map();
   const negCount = new Map();
-  let nPos = 0, nNeg = 0, nDirectional = 0;
+  const docTypes = [];
+  let nPos = 0, nNeg = 0, nDirectional = 0, headline = null; // largest figure
   for (const d of docs) {
+    if (d.pdf.doc_type && !docTypes.includes(d.pdf.doc_type)) docTypes.push(d.pdf.doc_type);
     const trg = d.pdf.triggers || [];
     if (trg.length) nDirectional += 1;
     for (const t of trg) {
       if (t.polarity > 0) { nPos += 1; posCount.set(t.label, (posCount.get(t.label) || 0) + 1); }
       else if (t.polarity < 0) { nNeg += 1; negCount.set(t.label, (negCount.get(t.label) || 0) + 1); }
+      const cr = amountToCr(t.amount);
+      if (cr != null && (!headline || cr > headline.cr)) headline = { cr, text: t.amount, label: t.label };
     }
   }
   const topThemes = (m) =>
@@ -510,8 +526,10 @@ export function filingsOverview(corp) {
   }
   if (!posThemes.length && !negThemes.length)
     synthesis.push({ t: " — no directional language detected" });
+  if (headline)
+    synthesis.push({ t: ", including a figure of " }, { t: headline.text, c: "text-white font-medium" });
   synthesis.push({ t: "." });
 
   return { tone, toneTone, toneChip, nDocs: n, nDirectional, nPos, nNeg,
-           posThemes, negThemes, synthesis, range };
+           posThemes, negThemes, synthesis, range, headline, docTypes };
 }

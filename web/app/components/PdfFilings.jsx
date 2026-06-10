@@ -22,10 +22,19 @@ const fmtDate = (iso) => {
   }
 };
 
-// Collapsible "Read from PDF" for a single filing. Button (closed) → sentiment
-// chip + trigger count; expanded → trigger chips + the extracted snippets that
-// drove them, plus a link to open the actual document. Renders for every
-// readable filing (neutral filings show an honest "no directional language").
+// A single trigger chip — label plus the monetary figure when the reader found
+// one in context (e.g. an order's value).
+const TriggerChip = ({ t }) => (
+  <span className={`chip text-[9px] ${t.polarity > 0 ? "chip-up" : "chip-down"}`}>
+    {t.polarity > 0 ? "▲" : "▼"} {t.label}
+    {t.amount ? <span className="font-semibold"> · {t.amount}</span> : null}
+  </span>
+);
+
+// Collapsible "Read from PDF" for a single filing. Button (closed) → filing-type
+// + sentiment chips + the trigger labels; expanded → trigger chips (with any
+// amounts) and the extracted snippets that drove them, plus a link to open the
+// document. Renders for every readable filing (neutral ones say so honestly).
 export function PdfRead({ pdf, attachment }) {
   const [open, setOpen] = useState(false);
   if (!pdf) return null;
@@ -45,17 +54,15 @@ export function PdfRead({ pdf, attachment }) {
           <span className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
           Read from PDF
         </button>
+        {pdf.doc_type && (
+          <span className="chip text-[9px] bg-accent/15 text-accent">{pdf.doc_type}</span>
+        )}
         {sentiment && (
           <span className={`chip text-[9px] ${PDF_TONE[sentiment] || "bg-line/40 text-muted"}`}>
             {sentiment} tone
           </span>
         )}
-        {!open &&
-          trg.slice(0, 4).map((t, i) => (
-            <span key={i} className={`chip text-[9px] ${t.polarity > 0 ? "chip-up" : "chip-down"}`}>
-              {t.polarity > 0 ? "▲" : "▼"} {t.label}
-            </span>
-          ))}
+        {!open && trg.slice(0, 4).map((t, i) => <TriggerChip key={i} t={t} />)}
         {!open && trg.length > 4 && <span className="text-[9px] text-muted">+{trg.length - 4}</span>}
         {attachment && (
           <a
@@ -74,11 +81,7 @@ export function PdfRead({ pdf, attachment }) {
           {trg.length ? (
             <>
               <div className="flex items-center gap-1.5 flex-wrap my-1.5">
-                {trg.map((t, i) => (
-                  <span key={i} className={`chip text-[9px] ${t.polarity > 0 ? "chip-up" : "chip-down"}`}>
-                    {t.polarity > 0 ? "▲" : "▼"} {t.label}
-                  </span>
-                ))}
+                {trg.map((t, i) => <TriggerChip key={i} t={t} />)}
               </div>
               {snippets.map((t, i) => (
                 <p key={i} className="text-[11px] text-muted/90 leading-snug mt-1">
@@ -93,11 +96,6 @@ export function PdfRead({ pdf, attachment }) {
               No directional language detected in this filing — read as neutral.
             </p>
           )}
-          {pdf.excerpt && (
-            <p className="text-[10px] text-muted/60 leading-snug mt-1.5 italic">
-              From the document: “{pdf.excerpt}…”
-            </p>
-          )}
         </div>
       )}
     </div>
@@ -110,7 +108,8 @@ export function PdfRead({ pdf, attachment }) {
 export function FilingsOverview({ corp, className = "" }) {
   const ov = filingsOverview(corp);
   if (!ov) return null;
-  const { tone, toneChip, nDocs, nDirectional, nPos, nNeg, posThemes, negThemes, synthesis, range } = ov;
+  const { tone, toneChip, nDocs, nDirectional, nPos, nNeg, posThemes, negThemes,
+          synthesis, range, docTypes = [] } = ov;
 
   return (
     <div className={`rounded-xl border border-accent/25 bg-accent/[0.04] p-3.5 ${className}`}>
@@ -130,6 +129,15 @@ export function FilingsOverview({ corp, className = "" }) {
       <p className="text-sm leading-relaxed text-muted mb-2">
         <Spans spans={synthesis} />
       </p>
+
+      {docTypes.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+          <span className="text-[10px] uppercase tracking-wide text-muted">Covering</span>
+          {docTypes.map((d) => (
+            <span key={d} className="chip text-[9px] bg-accent/15 text-accent">{d}</span>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center gap-3 flex-wrap text-[11px]">
         <span className="text-muted">

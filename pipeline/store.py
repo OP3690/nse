@@ -208,9 +208,15 @@ CREATE TABLE IF NOT EXISTS corp_pdf_analysis (
     attachment TEXT PRIMARY KEY,
     sentiment TEXT, score INTEGER, n_pos INTEGER, n_neg INTEGER,
     has_text INTEGER, n_pages INTEGER, ok INTEGER,
-    triggers TEXT, excerpt TEXT, fetched_at TEXT
+    triggers TEXT, excerpt TEXT, doc_type TEXT, fetched_at TEXT
 );
 """
+
+# Columns added after the original tables shipped. Applied best-effort on every
+# connect so existing local/cloud DBs gain them without a manual migration.
+_ADD_COLUMNS = [
+    ("corp_pdf_analysis", "doc_type", "TEXT"),
+]
 
 
 def connect() -> sqlite3.Connection:
@@ -218,6 +224,11 @@ def connect() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    for table, col, typ in _ADD_COLUMNS:
+        try:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     return con
 
 
@@ -483,7 +494,7 @@ def store_corp_pdf(con, rows):
     import datetime as _dt
     now = _dt.datetime.now().isoformat(timespec="seconds")
     cols = ["attachment", "sentiment", "score", "n_pos", "n_neg",
-            "has_text", "n_pages", "ok", "triggers", "excerpt"]
+            "has_text", "n_pages", "ok", "triggers", "excerpt", "doc_type"]
     payload = [[r.get(c) for c in cols] + [now]
                for r in rows if r.get("attachment")]
     if not payload:

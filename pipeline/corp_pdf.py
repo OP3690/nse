@@ -129,9 +129,112 @@ NEGATIVE_TRIGGERS: list[tuple[str, list[str]]] = [
 
 _WS = re.compile(r"\s+")
 
+# ---------------------------------------------------------------------------
+# Masthead / letterhead boilerplate. The top of almost every exchange filing is
+# the company's address block and the standard "To, The Secretary, Listing
+# Department, BSE Limited…" cover matter — pure noise that drowns the actual
+# development. We drop those lines before building the excerpt so the preview
+# shows substance, not a postal address.
+_BOILERPLATE = re.compile(
+    r"(regd\.?\s*off|register?ed\s+off|corporate\s+off|\bcin\b|e-?mail|"
+    r"website|www\.|https?:|tel\.?\s*[:\-]|phone|\bfax\b|listing\s+dep|"
+    r"the\s+secretary|bse\s+limited|national\s+stock\s+exchange|exchange\s+plaza|"
+    r"bandra|dalal\s+street|scrip\s+code|\bisin\b|dear\s+sir|"
+    r"corporate\s+relationship|department\s+of\s+corporate)",
+    re.I)
+
+# A monetary figure that carries an explicit magnitude unit — this requirement
+# is what keeps pincodes, CINs, phone numbers and page numbers out of the read.
+_AMOUNT = re.compile(
+    r"(?:₹|rs\.?|inr)?\s?([\d][\d,]{0,13}(?:\.\d+)?)\s*"
+    r"(crores?|cr|lakhs?|lacs?|million|mn|billion|bn)\b",
+    re.I)
+
+# Words that negate a following positive phrase ("did not receive an order",
+# "no buyback") — a light guard against false positives.
+_NEG_GUARD = re.compile(
+    r"\b(no|not|without|never|nor|fails?\s+to|failed\s+to|did\s+not|does\s+not|"
+    r"do\s+not|deferred|denied|cancell?ed|withdrawn|rejected|unable\s+to)\b", re.I)
+
+# Document-type classifier. First match wins; ordering puts the most specific
+# (and most market-moving) categories first.
+_DOC_TYPES: list[tuple[str, list[str]]] = [
+    ("Quarterly results", ["unaudited financial results", "audited financial results",
+                           "statement of standalone", "statement of consolidated",
+                           "financial results for the quarter", "statement of profit and loss"]),
+    ("Order win", ["received an order", "work order", "letter of intent", "purchase order",
+                   "bagged", "secured a contract", "secured an order", "order worth",
+                   "awarded the contract", "emerged as the lowest"]),
+    ("Dividend", ["recommended a dividend", "declared a dividend", "interim dividend",
+                  "final dividend", "record date for"]),
+    ("Buyback", ["buy-back", "buyback"]),
+    ("Fundraise", ["preferential issue", "qualified institutions placement", "qip",
+                   "rights issue", "raising of funds", "issue of equity shares",
+                   "convertible warrants", "fund raising"]),
+    ("M&A / scheme", ["scheme of arrangement", "scheme of amalgamation", "acquisition of",
+                      "amalgamation", "slump sale", "demerger"]),
+    ("Credit rating", ["credit rating", "rating action", "reaffirmed the rating",
+                       "assigned a rating", "rating rationale"]),
+    ("Investor update", ["investor presentation", "earnings call", "analyst meet",
+                         "con. call", "conference call", "earnings conference",
+                         "transcript of", "investor meet"]),
+    ("Leadership change", ["resignation of", "has resigned", "appointment of",
+                           "cessation of", "re-appointment"]),
+    ("Board meeting", ["board meeting", "meeting of the board", "intimation of board"]),
+]
+
 
 def _normalise(text: str) -> str:
     return _WS.sub(" ", text).lower()
+
+
+def _fmt_amount(num: str, unit: str) -> str:
+    """₹/lakh/crore figure → a compact display string like '₹500 Cr'."""
+    u = unit.lower()
+    disp = ("Cr" if u.startswith("cr") else
+            "Lakh" if u.startswith(("lakh", "lac")) else
+            "Mn" if u in ("million", "mn") else
+            "Bn" if u in ("billion", "bn") else "")
+    if "." in num:
+        num = num.rstrip("0").rstrip(".")
+    return f"₹{num} {disp}".strip() if disp else f"₹{num}"
+
+
+def _nearest_amount(text: str, phrase: str, window: int = 200) -> str | None:
+    """The first magnitude-bearing figure within `window` chars of `phrase`.
+    Returns a clean display string (₹500 Cr) or None when nothing qualifies."""
+    low = text.lower()
+    i = low.find(phrase.lower())
+    if i < 0:
+        return None
+    seg = text[max(0, i - window // 3): i + len(phrase) + window]
+    m = _AMOUNT.search(seg)
+    return _fmt_amount(m.group(1), m.group(2)) if m else None
+
+
+def _negated(norm: str, idx: int, back: int = 42) -> bool:
+    return bool(_NEG_GUARD.search(norm[max(0, idx - back):idx]))
+
+
+def _classify(norm: str) -> str | None:
+    for label, keys in _DOC_TYPES:
+        if any(k in norm for k in keys):
+            return label
+    return None
+
+
+def _clean_excerpt(text: str, limit: int = 360) -> str:
+    """A readable preview that skips the letterhead. Prefers the filing's own
+    subject line (which usually states the development) when present."""
+    m = re.search(r"\bsub(?:ject)?\s*[:\-]\s*(.+)", text, re.I)
+    if m:
+        subj = _WS.sub(" ", m.group(1)).strip()
+        if 14 <= len(subj):
+            return subj[:limit].rsplit(" ", 1)[0] if len(subj) > limit else subj
+    kept = [ln.strip() for ln in text.splitlines()
+            if ln.strip() and len(ln.strip()) > 3 and not _BOILERPLATE.search(ln)]
+    body = _WS.sub(" ", " ".join(kept)).strip()
+    return body[:limit].rsplit(" ", 1)[0] if len(body) > limit else body
 
 
 def _snippet(haystack: str, phrase: str, width: int = 140) -> str:
@@ -170,25 +273,49 @@ def extract_text(data: bytes, max_pages: int = 8, max_chars: int = 24000) -> str
     return "\n".join(parts).strip()[:max_chars]
 
 
+def _first_hit(norm: str, phrases: list[str], guard_negation: bool) -> str | None:
+    """First phrase that occurs in `norm` and (for positives) isn't negated."""
+    for p in phrases:
+        idx = norm.find(p)
+        while idx != -1:
+            if not (guard_negation and _negated(norm, idx)):
+                return p
+            idx = norm.find(p, idx + 1)
+    return None
+
+
 def scan_triggers(text: str) -> dict:
-    """Lexicon scan → {sentiment, score, triggers:[{label,polarity,phrase,snippet}],
-    excerpt, n_pos, n_neg}. score is the net (capped) polarity count."""
+    """Advanced lexicon read → {sentiment, score, triggers:[{label, polarity,
+    phrase, snippet, amount?}], excerpt, n_pos, n_neg, doc_type}.
+
+    Beyond a bare keyword hit, each trigger is negation-guarded (so "did not
+    receive an order" doesn't fire) and annotated with the nearest monetary
+    figure when one is in context (e.g. an order's value). The document is also
+    classified into a coarse filing type, and the excerpt skips the letterhead."""
     if not text:
         return {"sentiment": None, "score": 0, "triggers": [], "excerpt": "",
-                "n_pos": 0, "n_neg": 0}
+                "n_pos": 0, "n_neg": 0, "doc_type": None}
     norm = _normalise(text)
     triggers: list[dict] = []
 
     for label, phrases in POSITIVE_TRIGGERS:
-        hit = next((p for p in phrases if p in norm), None)
+        hit = _first_hit(norm, phrases, guard_negation=True)
         if hit:
-            triggers.append({"label": label, "polarity": 1, "phrase": hit.strip(),
-                             "snippet": _snippet(text, hit)})
+            t = {"label": label, "polarity": 1, "phrase": hit.strip(),
+                 "snippet": _snippet(text, hit)}
+            amt = _nearest_amount(text, hit)
+            if amt:
+                t["amount"] = amt
+            triggers.append(t)
     for label, phrases in NEGATIVE_TRIGGERS:
-        hit = next((p for p in phrases if p in norm), None)
+        hit = _first_hit(norm, phrases, guard_negation=False)
         if hit:
-            triggers.append({"label": label, "polarity": -1, "phrase": hit.strip(),
-                             "snippet": _snippet(text, hit)})
+            t = {"label": label, "polarity": -1, "phrase": hit.strip(),
+                 "snippet": _snippet(text, hit)}
+            amt = _nearest_amount(text, hit)
+            if amt:
+                t["amount"] = amt
+            triggers.append(t)
 
     n_pos = sum(1 for t in triggers if t["polarity"] > 0)
     n_neg = sum(1 for t in triggers if t["polarity"] < 0)
@@ -196,15 +323,12 @@ def scan_triggers(text: str) -> dict:
     sentiment = "Positive" if score > 0 else "Negative" if score < 0 else (
         "Neutral" if triggers else None)
 
-    # A short readable preview of the document body (skip the masthead noise).
-    excerpt = _WS.sub(" ", text).strip()
-    excerpt = excerpt[:400].rsplit(" ", 1)[0] if len(excerpt) > 400 else excerpt
-
     # Sort strongest-signal first: negatives ahead of positives on a tie so risk
     # is never buried, then keep deterministic order.
     triggers.sort(key=lambda t: (t["polarity"], t["label"]))
     return {"sentiment": sentiment, "score": score, "triggers": triggers,
-            "excerpt": excerpt, "n_pos": n_pos, "n_neg": n_neg}
+            "excerpt": _clean_excerpt(text), "n_pos": n_pos, "n_neg": n_neg,
+            "doc_type": _classify(norm)}
 
 
 def analyze_url(client, url: str) -> dict | None:
