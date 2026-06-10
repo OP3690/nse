@@ -3,6 +3,7 @@
 import { useState } from "react";
 import StockTip from "./StockTip";
 import InfoDot from "./InfoDot";
+import { MarketNarrative } from "./CorpNarrative";
 
 // ---- shared tone helpers ---------------------------------------------------
 const setupTone = (v) =>
@@ -160,6 +161,9 @@ export default function EarningsEvents({ corp }) {
           <div><span className="font-mono text-white">{(stats.announcements_30d || 0).toLocaleString("en-IN")}</span> filings · 30d</div>
         </div>
       </div>
+
+      {/* plain-English market read */}
+      <MarketNarrative corp={corp} className="mb-3 leading-relaxed bg-ink/30 border border-line/60 rounded-lg px-3 py-2" />
 
       {/* tab switch */}
       <div className="flex gap-1.5 mb-3">

@@ -195,6 +195,21 @@ CREATE TABLE IF NOT EXISTS corp_results (
 );
 CREATE INDEX IF NOT EXISTS idx_corp_res_symbol ON corp_results(symbol);
 CREATE INDEX IF NOT EXISTS idx_corp_res_bcast ON corp_results(broadcast_date);
+
+-- Best-effort PDF-trigger read of an announcement's filing attachment. Keyed by
+-- the attachment URL so the (expensive) fetch+parse is done once and cached
+-- across runs and across symbols that share a document. `sentiment` is our
+-- deterministic lexicon net (Positive/Negative/Neutral, or NULL when the PDF
+-- carried no extractable text — i.e. a scanned image). `triggers` is a JSON
+-- array of {label, polarity, phrase, snippet}; `excerpt` a short text preview.
+-- ok=1 means the document was fetched and parsed (even if no triggers / no
+-- text); rows with ok=1 are never re-fetched.
+CREATE TABLE IF NOT EXISTS corp_pdf_analysis (
+    attachment TEXT PRIMARY KEY,
+    sentiment TEXT, score INTEGER, n_pos INTEGER, n_neg INTEGER,
+    has_text INTEGER, n_pages INTEGER, ok INTEGER,
+    triggers TEXT, excerpt TEXT, fetched_at TEXT
+);
 """
 
 
@@ -460,3 +475,30 @@ def store_corp_results(con, rows):
         f"INSERT OR REPLACE INTO corp_results ({','.join(cols)},fetched_at) "
         f"VALUES ({','.join('?' * (len(cols) + 1))})", payload)
     return len(payload)
+
+
+def store_corp_pdf(con, rows):
+    """rows = [{attachment, sentiment, score, n_pos, n_neg, has_text, n_pages,
+    ok, triggers(JSON str), excerpt}]. Idempotent upsert by attachment URL."""
+    import datetime as _dt
+    now = _dt.datetime.now().isoformat(timespec="seconds")
+    cols = ["attachment", "sentiment", "score", "n_pos", "n_neg",
+            "has_text", "n_pages", "ok", "triggers", "excerpt"]
+    payload = [[r.get(c) for c in cols] + [now]
+               for r in rows if r.get("attachment")]
+    if not payload:
+        return 0
+    con.executemany(
+        f"INSERT OR REPLACE INTO corp_pdf_analysis ({','.join(cols)},fetched_at) "
+        f"VALUES ({','.join('?' * (len(cols) + 1))})", payload)
+    return len(payload)
+
+
+def pdf_analysed_urls(con) -> set[str]:
+    """Attachment URLs already fetched+parsed (ok=1), to skip on the next run."""
+    try:
+        rows = con.execute(
+            "SELECT attachment FROM corp_pdf_analysis WHERE ok = 1").fetchall()
+        return {r[0] for r in rows}
+    except Exception:  # noqa: BLE001
+        return set()

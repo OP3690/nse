@@ -18,10 +18,16 @@ facts plus the price/flow history already in the DB.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import re
 import xml.etree.ElementTree as ET
 
 import store
+
+try:
+    import corp_pdf
+except Exception:  # noqa: BLE001 — module must import even if pypdf is missing
+    corp_pdf = None
 
 # ----------------------------------------------------------------------------
 # Date helpers — NSE mixes "DD-Mon-YYYY HH:MM:SS" and "DD-Mon-YYYY"; XBRL is ISO.
@@ -381,10 +387,58 @@ def refresh(con, client, ann_days: int = 21, res_days: int = 800, xbrl_limit: in
         })
     summary["results"] = store.store_corp_results(con, res_rows)
 
+    # --- PDF triggers: read recent event filings' attachments, best-effort. ---
+    summary["pdf"] = refresh_pdf_triggers(con, client)
+
     con.commit()
     print(f"  corp: {summary['announcements']} announcements, {summary['calendar']} calendar, "
-          f"{summary['results']} results ({summary['xbrl']} with XBRL numbers)")
+          f"{summary['results']} results ({summary['xbrl']} with XBRL numbers), "
+          f"{summary['pdf']} PDF triggers")
     return summary
+
+
+def refresh_pdf_triggers(con, client, limit: int = 160, days: int = 21) -> int:
+    """Fetch + lexicon-scan the PDF attachment of each recent event-category
+    announcement we haven't read yet, and cache the trigger read keyed by URL.
+
+    Bounded and best-effort: at most `limit` new PDFs per run (the cache means
+    each document is read once, ever), only high-signal categories, only the
+    last `days`. A scanned (image-only) PDF is marked done with sentiment NULL so
+    it isn't re-fetched. Any failure contributes zero and never breaks the run."""
+    if corp_pdf is None:
+        return 0
+    done = store.pdf_analysed_urls(con)
+    cut = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+    cats = "(" + ",".join("?" * len(_EVENT_CATS)) + ")"
+    rows = _rows(
+        con,
+        f"SELECT DISTINCT attachment FROM corp_announcements "
+        f"WHERE an_dt >= ? AND category IN {cats} "
+        f"AND attachment LIKE '%.pdf' ORDER BY an_dt DESC",
+        (cut, *sorted(_EVENT_CATS)),
+    )
+    todo = [r["attachment"] for r in rows if r["attachment"] and r["attachment"] not in done]
+    out = []
+    for url in todo[:limit]:
+        try:
+            res = corp_pdf.analyze_url(client, url)
+        except Exception:  # noqa: BLE001
+            res = None
+        if res is None:
+            continue  # fetch failed — leave unmarked so a later run retries
+        out.append({
+            "attachment": url,
+            "sentiment": res.get("sentiment"),
+            "score": res.get("score"),
+            "n_pos": res.get("n_pos"),
+            "n_neg": res.get("n_neg"),
+            "has_text": 1 if res.get("has_text") else 0,
+            "n_pages": res.get("n_pages"),
+            "ok": 1,
+            "triggers": json.dumps(res.get("triggers") or []),
+            "excerpt": res.get("excerpt") or "",
+        })
+    return store.store_corp_pdf(con, out)
 
 
 # ----------------------------------------------------------------------------
@@ -542,10 +596,14 @@ def _fin_view(r: dict) -> dict:
             "pat_yoy": r.get("pat_yoy"), "broadcast_date": r.get("broadcast_date")}
 
 
-def _ann_view(a: dict) -> dict:
-    return {"date": a.get("an_dt"), "category": a.get("category"),
-            "polarity": a.get("polarity"), "headline": a.get("headline"),
-            "attachment": a.get("attachment")}
+def _ann_view(a: dict, pdf_by_url: dict | None = None) -> dict:
+    v = {"date": a.get("an_dt"), "category": a.get("category"),
+         "polarity": a.get("polarity"), "headline": a.get("headline"),
+         "attachment": a.get("attachment")}
+    p = (pdf_by_url or {}).get(a.get("attachment"))
+    if p:
+        v["pdf"] = p  # {sentiment, score, triggers:[{label,polarity,phrase,snippet}], excerpt}
+    return v
 
 
 def _flag_view(s: dict, last: dict | None = None) -> dict:
@@ -613,6 +671,22 @@ def build_payload(con, by_symbol: dict, today: dt.date | None = None) -> tuple[d
                  "SELECT * FROM corp_announcements WHERE an_dt >= ? ORDER BY an_dt DESC",
                  (recent_cut,))
 
+    # PDF-trigger reads, keyed by attachment URL. Keep only documents that
+    # actually yielded at least one trigger (skip scanned/empty/neutral-blank).
+    pdf_by_url: dict[str, dict] = {}
+    for r in _rows(con, "SELECT * FROM corp_pdf_analysis WHERE ok = 1"):
+        try:
+            trg = json.loads(r.get("triggers") or "[]")
+        except (ValueError, TypeError):
+            trg = []
+        if not trg:
+            continue
+        pdf_by_url[r["attachment"]] = {
+            "sentiment": r.get("sentiment"), "score": r.get("score"),
+            "n_pos": r.get("n_pos"), "n_neg": r.get("n_neg"),
+            "triggers": trg, "excerpt": r.get("excerpt") or "",
+        }
+
     # --- per-symbol summaries (only for symbols we have a live entry for) -----
     syms = set(fin_by_sym) | {c["symbol"] for c in cal} | {a["symbol"] for a in anns}
     summaries: dict[str, dict] = {}
@@ -626,6 +700,10 @@ def build_payload(con, by_symbol: dict, today: dt.date | None = None) -> tuple[d
         nxt = next((c for c in cal if c["symbol"] == sym), None)
         ev = [a for a in anns if a["symbol"] == sym and a["category"] in _EVENT_CATS]
         vd = verdict(e, fin) if (ev or fin) else None
+        timeline = [_ann_view(a, pdf_by_url) for a in ev[:10]]
+        # Most-recent filing whose PDF yielded a trigger read — the headline
+        # "what the document actually says" signal for this name.
+        pdf_read = next((t["pdf"] for t in timeline if t.get("pdf")), None)
         summaries[sym] = {
             "symbol": sym,
             "company": e.get("company") or (fin or {}).get("company"),
@@ -637,7 +715,8 @@ def build_payload(con, by_symbol: dict, today: dt.date | None = None) -> tuple[d
             "next_event": _event_view(nxt) if nxt else None,
             "verdict": vd,
             "financials": _fin_view(fin) if fin else None,
-            "timeline": [_ann_view(a) for a in ev[:10]],
+            "timeline": timeline,
+            "pdf": pdf_read,
         }
 
     # --- recommendation list: upcoming events ranked by setup quality ---------
@@ -691,7 +770,7 @@ def build_payload(con, by_symbol: dict, today: dt.date | None = None) -> tuple[d
             "recent_weak": recent_weak[:20],
         },
         "recent_events": [
-            {**_ann_view(a), "symbol": a["symbol"], "company": a.get("company")}
+            {**_ann_view(a, pdf_by_url), "symbol": a["symbol"], "company": a.get("company")}
             for a in anns if a["category"] in _EVENT_CATS
         ][:60],
     }

@@ -2,6 +2,7 @@
 
 import StockTip from "./StockTip";
 import InfoDot from "./InfoDot";
+import { MarketNarrative } from "./CorpNarrative";
 
 const setupTone = (v) =>
   v == null ? "text-muted" : v >= 70 ? "text-up" : v >= 55 ? "text-accent" : v >= 40 ? "text-white" : "text-down";
@@ -62,10 +63,11 @@ export default function EarningsRadar({ corp }) {
         </h2>
         <a href="/screener" className="text-accent text-xs hover:underline">Open Screener →</a>
       </div>
-      <p className="text-xs text-muted mb-3">
+      <p className="text-xs text-muted mb-2">
         Corporate events on the horizon and how recent reporters were received — flags from NSE/BSE
         disclosures, ranked by the stock&apos;s accumulation setup.
       </p>
+      <MarketNarrative corp={corp} className="mb-3 leading-relaxed" />
 
       <div className="grid sm:grid-cols-3 gap-4">
         <Col title="Events soon" dot="bg-accent" empty="No upcoming events.">

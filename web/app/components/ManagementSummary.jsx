@@ -1,4 +1,6 @@
 import InfoDot from "./InfoDot";
+import CorpNarrative, { StockThesis } from "./CorpNarrative";
+import { finMargins } from "../lib/corpNarrative";
 
 const setupTone = (v) =>
   v == null ? "text-muted" : v >= 70 ? "text-up" : v >= 55 ? "text-accent" : v >= 40 ? "text-white" : "text-down";
@@ -22,6 +24,39 @@ const KIND_TONE = {
   "M&A": "bg-[#c77dff]/15 text-[#c77dff]",
 };
 const POLARITY_DOT = (p) => (p > 0 ? "bg-up" : p < 0 ? "bg-down" : "bg-muted");
+const PDF_TONE = {
+  Positive: "chip-up",
+  Negative: "chip-down",
+  Neutral: "bg-amber-500/15 text-amber-400",
+};
+
+// The lexicon read of a filing's PDF: a sentiment chip, the matched trigger
+// labels, and the actual extracted text snippets that drove them.
+function PdfTriggers({ pdf }) {
+  if (!pdf || !pdf.triggers?.length) return null;
+  return (
+    <div className="mt-1.5 rounded-lg border border-line/60 bg-ink/30 px-2.5 py-2">
+      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+        <span className="text-[9px] uppercase tracking-wide text-muted font-semibold">Read from PDF</span>
+        {pdf.sentiment && (
+          <span className={`chip text-[9px] ${PDF_TONE[pdf.sentiment] || "bg-line/40 text-muted"}`}>
+            {pdf.sentiment} tone
+          </span>
+        )}
+        {pdf.triggers.map((t, i) => (
+          <span key={i} className={`chip text-[9px] ${t.polarity > 0 ? "chip-up" : "chip-down"}`}>
+            {t.polarity > 0 ? "▲" : "▼"} {t.label}
+          </span>
+        ))}
+      </div>
+      {pdf.triggers.filter((t) => t.snippet).slice(0, 2).map((t, i) => (
+        <p key={i} className="text-[11px] text-muted/90 leading-snug">
+          <span className="text-muted/60">“</span>{t.snippet}<span className="text-muted/60">”</span>
+        </p>
+      ))}
+    </div>
+  );
+}
 
 const fmtCr = (n) =>
   n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })} Cr`;
@@ -68,6 +103,7 @@ export default function ManagementSummary({ corp }) {
   if (!corp) return null;
   const { next_event: nxt, verdict: vd, financials: fin, timeline = [] } = corp;
   const hasFin = fin && (fin.revenue != null || fin.pat != null || fin.pbt != null);
+  const mgn = finMargins(fin);
   const nd = nxt ? daysUntil(nxt.date) : null;
 
   return (
@@ -79,6 +115,12 @@ export default function ManagementSummary({ corp }) {
         </h2>
         <span className="text-[11px] text-muted">From NSE/BSE corporate disclosures</span>
       </div>
+
+      {/* plain-English synthesis of everything below */}
+      <CorpNarrative corp={corp} className="mb-4" />
+
+      {/* bull / bear factor decomposition */}
+      <StockThesis corp={corp} className="mb-4" />
 
       {/* setup + lean + verdict row */}
       <div className="grid sm:grid-cols-3 gap-4 mb-4">
@@ -139,13 +181,25 @@ export default function ManagementSummary({ corp }) {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <FinCell label="Revenue" value={fmtCr(fin.revenue)} yoy={fmtYoY(fin.revenue_yoy)} tone={yoyTone(fin.revenue_yoy)} />
-            <FinCell label="PBT" value={fmtCr(fin.pbt)} />
+            <FinCell label="PBT" value={fmtCr(fin.pbt)} sub={mgn?.pbtMargin != null ? `${mgn.pbtMargin.toFixed(1)}% margin` : null} />
             <FinCell label="PAT" value={fmtCr(fin.pat)} yoy={fmtYoY(fin.pat_yoy)} tone={yoyTone(fin.pat_yoy)} />
             <FinCell label="Total income" value={fmtCr(fin.income)} />
           </div>
+          {mgn?.patMargin != null && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap text-[12px]">
+              <span className="text-muted">Net (PAT) margin</span>
+              <span className="font-mono font-semibold text-white tabular-nums">{mgn.patMargin.toFixed(1)}%</span>
+              {mgn.patMarginYoY != null && (
+                <span className={`font-mono ${yoyTone(mgn.patMarginYoY)}`}>
+                  {mgn.patMarginYoY >= 0 ? "+" : ""}{mgn.patMarginYoY.toFixed(1)}pp YoY
+                  <span className="text-muted ml-1">({mgn.patMarginYoY >= 0 ? "expanding" : "compressing"})</span>
+                </span>
+              )}
+            </div>
+          )}
           <p className="text-[11px] text-muted mt-2">
-            Headline numbers parsed best-effort from the filing&apos;s XBRL. YoY shown where the year-ago
-            comparative is present in the same filing.
+            Headline numbers parsed best-effort from the filing&apos;s XBRL. Margins computed as a % of
+            revenue; the YoY swing reconstructs the year-ago figure from the reported growth rates.
           </p>
         </div>
       )}
@@ -166,6 +220,7 @@ export default function ManagementSummary({ corp }) {
                     <a href={a.attachment} target="_blank" rel="noopener noreferrer"
                       className="text-accent text-[11px] ml-1.5 hover:underline whitespace-nowrap">PDF ↗</a>
                   )}
+                  <PdfTriggers pdf={a.pdf} />
                 </div>
               </div>
             ))}
@@ -181,12 +236,13 @@ export default function ManagementSummary({ corp }) {
   );
 }
 
-function FinCell({ label, value, yoy, tone }) {
+function FinCell({ label, value, yoy, tone, sub }) {
   return (
     <div className="rounded-lg border border-line/70 bg-panel2/40 p-2.5">
       <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
       <div className="font-mono text-sm font-semibold text-white tabular-nums">{value}</div>
       {yoy && <div className={`text-[11px] font-mono ${tone}`}>{yoy} YoY</div>}
+      {sub && <div className="text-[11px] font-mono text-muted">{sub}</div>}
     </div>
   );
 }

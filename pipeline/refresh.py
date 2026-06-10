@@ -94,6 +94,22 @@ def fast_refresh(lookback: int = LOOKBACK) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"  IPO refresh skipped: {e!r}")
 
+    # 2d) Refresh corporate disclosures (Earnings & Events): announcements, the
+    #     forward board-meeting calendar, quarterly results (+XBRL numbers), and
+    #     the best-effort PDF-trigger read of recent filings. Same reasoning as
+    #     IPO — the cloud only ever runs this fast path, so without this the corp
+    #     tables stay empty and the Setup/Verdict + filing-trigger surfaces are
+    #     blank in prod. analyze.build_payload reads these tables and mongo-syncs
+    #     the result. Best-effort: a corp hiccup must never break the refresh.
+    try:
+        import corp
+        import store
+        con = store.connect()
+        corp.refresh(con, client)
+        con.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"  corp refresh skipped: {e!r}")
+
     # 3) Recompute all signals (incl. KNN Multibagger Radar) + emit JSON + Mongo sync.
     analyze.run()
     print("=== refresh done ===")
