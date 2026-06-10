@@ -4,7 +4,7 @@ const nextConfig = {
   // pdfjs-dist ships ESM + Node APIs that webpack mis-bundles in server routes;
   // require it at runtime instead (used by app/api/pdf for filing text extraction).
   experimental: {
-    serverComponentsExternalPackages: ["pdfjs-dist"],
+    serverComponentsExternalPackages: ["pdfjs-dist", "tesseract.js", "@napi-rs/canvas"],
   },
 };
 module.exports = nextConfig;

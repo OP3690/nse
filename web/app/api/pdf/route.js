@@ -2,22 +2,29 @@
 //
 // The browser can't fetch nsearchives.nseindia.com directly (CORS, and NSE
 // gates archive downloads behind a warmed cookie + Referer). This route runs
-// server-side: it warms an NSE session, downloads the PDF, and extracts the
-// first few pages of text with pdf.js. The *analysis* of that text — the
-// trigger read, key words and key sentences — then runs in the browser
-// (app/lib/pdfReader.js), so the "advanced read" is genuinely client-side.
+// server-side: it warms an NSE session, downloads the PDF, and extracts text.
+// First it tries the embedded text layer (pdf.js). If the filing is a scanned
+// image with no text layer, it falls back to OCR (render the first pages with
+// pdf.js + @napi-rs/canvas, recognise English text with tesseract.js). The
+// *analysis* of the resulting text — the trigger read, key words and key
+// sentences — then runs in the browser (app/lib/pdfReader.js).
 //
 // Scope is locked to *.nseindia.com (SSRF guard): this is a PDF text reader,
 // not an open proxy.
 
+import os from "node:os";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const MAX_PAGES = 8;
 const MAX_CHARS = 24000;
+const OCR_PAGES = 3; // OCR is slow (~2-3s/page); the substance is up front.
+const MIN_TEXT = 60; // below this many real characters we treat it as scanned.
 
 function allowed(urlStr) {
   try {
@@ -46,14 +53,21 @@ async function warmCookies() {
   }
 }
 
-async function extractText(buf) {
+// pdf.js detaches the ArrayBuffer it is handed, so every consumer gets a fresh
+// copy (.slice()) and the source Uint8Array stays reusable across passes.
+async function loadDoc(u8, extra = {}) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjs.getDocument({
-    data: new Uint8Array(buf),
-    useSystemFonts: true,
+  return pdfjs.getDocument({
+    data: u8.slice(),
     isEvalSupported: false,
     disableFontFace: true,
+    ...extra,
   }).promise;
+}
+
+// Embedded text layer (instant when present; empty for scanned/image PDFs).
+async function extractText(u8) {
+  const doc = await loadDoc(u8, { useSystemFonts: true });
   const nPages = doc.numPages;
   const parts = [];
   let chars = 0;
@@ -83,6 +97,43 @@ async function extractText(buf) {
   return { text: parts.join("\n").trim().slice(0, MAX_CHARS), nPages };
 }
 
+// OCR fallback for scanned English filings: rasterise the first pages and run
+// tesseract. Heavy, so it is only reached when there's no embedded text.
+async function ocrText(u8) {
+  const { createCanvas } = await import("@napi-rs/canvas");
+  const { createWorker } = await import("tesseract.js");
+
+  class NodeCanvasFactory {
+    create(width, height) {
+      const canvas = createCanvas(width, height);
+      return { canvas, context: canvas.getContext("2d") };
+    }
+    reset(cc, width, height) { cc.canvas.width = width; cc.canvas.height = height; }
+    destroy(cc) { if (cc.canvas) { cc.canvas.width = 0; cc.canvas.height = 0; } cc.canvas = null; cc.context = null; }
+  }
+
+  const doc = await loadDoc(u8, { CanvasFactory: NodeCanvasFactory });
+  const nPages = doc.numPages;
+  const worker = await createWorker("eng", 1, { cachePath: os.tmpdir() });
+  const parts = [];
+  try {
+    for (let p = 1; p <= Math.min(nPages, OCR_PAGES); p++) {
+      const page = await doc.getPage(p);
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = createCanvas(viewport.width, viewport.height);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      const png = canvas.toBuffer("image/png");
+      const { data: { text } } = await worker.recognize(png);
+      if (text) parts.push(text);
+      if (parts.join("").length > MAX_CHARS) break;
+    }
+  } finally {
+    await worker.terminate().catch(() => {});
+    await doc.cleanup().catch(() => {});
+  }
+  return { text: parts.join("\n").trim().slice(0, MAX_CHARS), nPages };
+}
+
 export async function GET(request) {
   const url = new URL(request.url).searchParams.get("url");
   if (!url || !allowed(url)) {
@@ -104,21 +155,31 @@ export async function GET(request) {
       return Response.json({ ok: false, error: `Filing fetch failed (HTTP ${res.status}).` }, { status: 502 });
     }
     const buf = await res.arrayBuffer();
-    const bytes = buf.byteLength; // capture before pdf.js detaches the buffer
+    const bytes = buf.byteLength;
     if (!buf || bytes < 200) {
       return Response.json({ ok: false, error: "Filing was empty." }, { status: 502 });
     }
-    const { text, nPages } = await extractText(buf);
-    return Response.json({
-      ok: true,
-      text,
-      nPages,
-      hasText: Boolean(text),
-      bytes,
-    });
+    const u8 = new Uint8Array(buf);
+
+    let { text, nPages } = await extractText(u8);
+    let ocr = false;
+    if (text.replace(/\s/g, "").length < MIN_TEXT) {
+      try {
+        const r = await ocrText(u8);
+        if (r.text.replace(/\s/g, "").length >= MIN_TEXT) {
+          text = r.text;
+          nPages = r.nPages;
+          ocr = true;
+        }
+      } catch {
+        /* OCR is best-effort; fall through with whatever (little) text we have */
+      }
+    }
+
+    return Response.json({ ok: true, text, nPages, hasText: Boolean(text), ocr, bytes });
   } catch (err) {
     return Response.json(
-      { ok: false, error: "Could not read this filing (it may be a scanned image)." },
+      { ok: false, error: "Could not read this filing." },
       { status: 500 },
     );
   }

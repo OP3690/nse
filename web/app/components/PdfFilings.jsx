@@ -74,12 +74,12 @@ export function PdfLiveRead({ attachment }) {
       if (!data.ok) throw new Error(data.error || "Could not read this filing.");
       if (!data.hasText) {
         setRes(null);
-        setErr("This filing has no extractable text — it's likely a scanned image.");
+        setErr("No readable text found in this filing, even after OCR.");
         setStatus("error");
         return;
       }
       const analysis = analyzePdfText(data.text);
-      setRes({ ...analysis, nPages: data.nPages });
+      setRes({ ...analysis, nPages: data.nPages, ocr: data.ocr });
       setStatus("done");
     } catch (e) {
       setErr(e?.message || "Could not read this filing.");
@@ -92,31 +92,32 @@ export function PdfLiveRead({ attachment }) {
     : "bg-line/40 text-muted";
 
   return (
-    <div className="mt-1.5 border-t border-line/40 pt-1.5">
+    <>
       {status !== "done" && (
         <button
           type="button"
           onClick={run}
           disabled={status === "loading"}
-          className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent hover:bg-accent/20 transition-colors disabled:opacity-60"
+          title="Fetch the PDF and analyse it in your browser"
+          className="inline-flex items-center gap-1 align-middle text-[10px] font-semibold text-accent hover:underline disabled:opacity-60 whitespace-nowrap"
         >
           {status === "loading" ? (
             <>
               <span className="inline-block w-2.5 h-2.5 rounded-full border border-accent border-t-transparent animate-spin" />
-              Reading the PDF…
+              reading…
             </>
           ) : (
-            <>⚡ Run advanced read</>
+            <>⚡ Advanced read</>
           )}
         </button>
       )}
 
       {status === "error" && (
-        <p className="text-[11px] text-down/90 leading-snug mt-1.5">{err}</p>
+        <p className="w-full basis-full text-[11px] text-down/90 leading-snug mt-1">{err}</p>
       )}
 
       {status === "done" && res && (
-        <div className="rounded-lg border border-accent/25 bg-accent/[0.05] p-2.5 mt-0.5">
+        <div className="w-full basis-full rounded-lg border border-accent/25 bg-accent/[0.05] p-2.5 mt-1.5">
           <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
             <span className="text-[9px] uppercase tracking-wide text-accent font-semibold">
               Advanced read
@@ -126,6 +127,9 @@ export function PdfLiveRead({ attachment }) {
             )}
             {res.sentiment && (
               <span className={`chip text-[9px] ${toneClass}`}>{res.sentiment} tone</span>
+            )}
+            {res.ocr && (
+              <span className="chip text-[9px] bg-amber-500/15 text-amber-400" title="Text recovered from a scanned image via OCR">OCR</span>
             )}
             <span className="ml-auto text-[9px] text-muted/70">
               read in your browser{res.nPages ? ` · ${res.nPages} pp` : ""}
@@ -172,7 +176,7 @@ export function PdfLiveRead({ attachment }) {
           </p>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -219,6 +223,14 @@ export function PdfRead({ pdf, attachment }) {
             View document ↗
           </a>
         )}
+        {/* small live-read button beside the document link; its result panel
+            wraps to its own full-width line below (basis-full) */}
+        {attachment && (
+          <>
+            <span className="text-line/60 text-[10px]">·</span>
+            <PdfLiveRead attachment={attachment} />
+          </>
+        )}
       </div>
 
       {open && (
@@ -241,14 +253,6 @@ export function PdfRead({ pdf, attachment }) {
               No directional language detected in this filing — read as neutral.
             </p>
           )}
-        </div>
-      )}
-
-      {/* always-available live read — fetches the actual PDF and analyses it
-          in the browser, independent of the cached read above */}
-      {attachment && (
-        <div className="px-2.5 pb-2">
-          <PdfLiveRead attachment={attachment} />
         </div>
       )}
     </div>
