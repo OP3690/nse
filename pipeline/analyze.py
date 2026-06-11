@@ -214,6 +214,113 @@ def build_sector_analytics(rows, index_sectors):
     }
 
 
+# Trailing windows surfaced by the interactive sector-performance chart. Only the
+# horizons our ~1y of history can actually resolve are emitted; 2y/3y are left to
+# the UI to render as disabled until a deeper backfill exists.
+_SECPERF_HORIZONS = [("1m", 21), ("3m", 63), ("6m", 126), ("1y", 248)]
+
+
+def _sym_rebased(series, di, n):
+    """Per-symbol price rebased to its own first close (1.0 at first session),
+    aligned to the shared date axis. None before the stock's first print / on
+    missing sessions. Rebasing per stock (rather than chaining daily returns)
+    keeps the composite a true cumulative-performance read, immune to the
+    volatility drag that compounding noisy median daily returns suffers."""
+    arr = [None] * n
+    base = None
+    for row in series:  # oldest -> newest
+        i = di.get(row.get("date"))
+        c = row.get("close")
+        if i is None or not c:
+            continue
+        if base is None:
+            base = c
+        arr[i] = c / base
+    return arr
+
+
+def _composite_index(rebased_arrs, n):
+    """Equal-weight composite index (base 100) = cross-sectional *median* of the
+    rebased constituent prices each session, so one blown-out name can't swing
+    the sector. Sessions with no constituent data carry the last level forward."""
+    series = []
+    for i in range(n):
+        day = [a[i] for a in rebased_arrs if a[i] is not None]
+        if day:
+            series.append(round(_median(day) * 100, 2))
+        else:
+            series.append(series[-1] if series else 100.0)
+    return series
+
+
+def _horizon_stats(rows):
+    """count + min/median/max of constituent trailing returns, per horizon."""
+    stats = {}
+    for hz, _ in _SECPERF_HORIZONS:
+        vals = [e[f"ret_{hz}"] for e in rows if e.get(f"ret_{hz}") is not None]
+        stats[hz] = ({
+            "n": len(vals),
+            "min": round(min(vals), 1),
+            "median": round(_median(vals), 1),
+            "max": round(max(vals), 1),
+        } if vals else None)
+    return stats
+
+
+def build_sector_performance(rows, histories, all_dates):
+    """Time-series + cross-sectional data behind the dashboard's interactive
+    sector-performance chart.
+
+    For every sector with >=3 constituents we chain an equal-weight composite
+    index over the full session axis (so the client can rebase to any window)
+    and attach per-horizon min/median/max of the constituents' trailing returns.
+    A whole-universe composite rides along as the benchmark. Descriptive — the
+    composite is a median-of-daily-returns read, not a tradable index."""
+    dates = list(all_dates or [])
+    n = len(dates)
+    if n < 2:
+        return {"dates": [], "horizons": [h for h, _ in _SECPERF_HORIZONS],
+                "sessions": {h: s for h, s in _SECPERF_HORIZONS}, "sectors": [], "market": None}
+    di = {d: i for i, d in enumerate(dates)}
+
+    groups: dict[str, list] = {}
+    for e in rows or []:
+        if e.get("sector"):
+            groups.setdefault(e["sector"], []).append(e)
+
+    sectors = []
+    for sec, lst in groups.items():
+        if len(lst) < 3:
+            continue
+        arrs = [_sym_rebased(histories.get(e["symbol"], []), di, n)
+                for e in lst if histories.get(e["symbol"])]
+        if not arrs:
+            continue
+        sectors.append({
+            "sector": sec,
+            "count": len(lst),
+            "series": _composite_index(arrs, n),
+            "stats": _horizon_stats(lst),
+        })
+    sectors.sort(key=lambda s: s["sector"])
+
+    with_sector = [e for e in (rows or []) if e.get("sector")]
+    mkt_arrs = [_sym_rebased(histories.get(e["symbol"], []), di, n)
+                for e in with_sector if histories.get(e["symbol"])]
+    market = {
+        "series": _composite_index(mkt_arrs, n) if mkt_arrs else [],
+        "stats": _horizon_stats(with_sector),
+    }
+
+    return {
+        "dates": dates,
+        "horizons": [h for h, _ in _SECPERF_HORIZONS],
+        "sessions": {h: s for h, s in _SECPERF_HORIZONS},
+        "sectors": sectors,
+        "market": market,
+    }
+
+
 def latest_date(con) -> str | None:
     row = con.execute("SELECT MAX(date) d FROM delivery_daily").fetchone()
     return row["d"] if row else None
@@ -931,6 +1038,7 @@ def build(con) -> dict:
         "tooltips": tooltips,
         "sectors": sectors_out,
         "sector_analytics": build_sector_analytics(headline, index_sectors),
+        "sector_performance": build_sector_performance(headline, histories, _all_dates),
         "top_accumulation": headline[:40],
         "oi_buildup": buckets,
         "notable_deals": notable,

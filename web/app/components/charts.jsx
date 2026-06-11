@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   ComposedChart, ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, Cell,
@@ -1014,5 +1014,306 @@ export function OiChart({ data }) {
         <Area dataKey="oi" name="OI" stroke="#5b8cff" fill="url(#oi)" strokeWidth={2} />
       </AreaChart>
     </ResponsiveContainer>
+  );
+}
+
+// ── Interactive sector-performance explorer (dashboard) ───────────────────────
+// Each sector is an equal-weight composite (median of its stocks' prices rebased
+// to the window start). Pick a horizon to reset the window; pick a sector to
+// spotlight it against the all-stock market composite and see the min/median/max
+// spread of its constituents' returns. Reads the `sector_performance` payload.
+const SECPERF_HZ = [
+  { k: "1m", label: "1M", on: true },
+  { k: "3m", label: "3M", on: true },
+  { k: "6m", label: "6M", on: true },
+  { k: "1y", label: "1Y", on: true },
+  { k: "2y", label: "2Y", on: false },
+  { k: "3y", label: "3Y", on: false },
+];
+const SECTOR_PALETTE = [
+  "#5b8cff", "#16c784", "#f0a020", "#c77dff", "#ff6b9d", "#22d3ee",
+  "#a3e635", "#fb923c", "#e879f9", "#34d399", "#facc15", "#60a5fa",
+  "#f87171", "#4ade80", "#fbbf24", "#a78bfa", "#2dd4bf", "#fb7185",
+  "#38bdf8", "#84cc16", "#fcd34d", "#c084fc", "#10b981", "#f97316",
+];
+const spFmt = (v, sign = true) =>
+  v == null ? "—" : `${v >= 0 ? (sign ? "+" : "") : ""}${Number(v).toFixed(1)}%`;
+const spMonth = (iso) => {
+  const [y, m] = (iso || "").split("-");
+  if (!m) return iso;
+  return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m - 1]} '${y.slice(2)}`;
+};
+
+export function SectorPerformanceChart({ data }) {
+  const t = useChartTheme();
+  const [hz, setHz] = useState("1y");
+  const [sel, setSel] = useState(null);
+
+  const sectors = data?.sectors || [];
+  const colorOf = useMemo(() => {
+    const m = {};
+    sectors.forEach((s, i) => { m[s.sector] = SECTOR_PALETTE[i % SECTOR_PALETTE.length]; });
+    return m;
+  }, [sectors]);
+
+  const hzLabel = SECPERF_HZ.find((h) => h.k === hz)?.label || hz;
+
+  const view = useMemo(() => {
+    const dates = data?.dates || [];
+    const n = dates.length;
+    if (!n) return null;
+    const sessions = data?.sessions?.[hz] ?? n - 1;
+    const start = Math.max(0, n - 1 - sessions);
+    const rebase = (series) => {
+      const base = series?.[start];
+      if (!base) return series?.slice(start).map(() => null) || [];
+      return series.slice(start).map((v) => (v == null ? null : (v / base - 1) * 100));
+    };
+    const slicedDates = dates.slice(start);
+    const perSector = sectors.map((s) => {
+      const reb = rebase(s.series);
+      return { ...s, reb, ret: reb.length ? reb[reb.length - 1] : null };
+    });
+    const mktReb = rebase(data?.market?.series || []);
+    const mktRet = mktReb.length ? mktReb[mktReb.length - 1] : null;
+    const rows = slicedDates.map((date, i) => {
+      const o = { date, __mkt: mktReb[i] };
+      perSector.forEach((s) => { o[s.sector] = s.reb[i]; });
+      return o;
+    });
+    const ranked = [...perSector].sort((a, b) => (b.ret ?? -1e9) - (a.ret ?? -1e9));
+    const maxAbs = Math.max(1, ...ranked.map((s) => Math.abs(s.ret ?? 0)));
+    return { rows, ranked, maxAbs, mktReb, mktRet, sessions };
+  }, [data, sectors, hz]);
+
+  if (!sectors.length || !view) {
+    return (
+      <div className="text-sm text-muted py-10 text-center">
+        Sector-performance history builds as the pipeline runs daily.
+      </div>
+    );
+  }
+
+  const { rows, ranked, maxAbs, mktRet } = view;
+  const AXIS = { stroke: t.axis, fontSize: 11 };
+  const selObj = sel ? ranked.find((s) => s.sector === sel) : null;
+  const stat = selObj?.stats?.[hz] || null;
+  const rank = selObj ? ranked.findIndex((s) => s.sector === sel) + 1 : 0;
+  const mStat = data?.market?.stats?.[hz] || null;
+  const pos = (v) =>
+    stat && stat.max !== stat.min
+      ? Math.max(0, Math.min(100, ((v - stat.min) / (stat.max - stat.min)) * 100))
+      : 50;
+
+  return (
+    <div>
+      {/* controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="inline-flex rounded-lg border border-line bg-ink/40 p-0.5">
+          {SECPERF_HZ.map((h) => (
+            <button
+              key={h.k}
+              disabled={!h.on}
+              onClick={() => h.on && setHz(h.k)}
+              title={h.on ? undefined : "Needs more than 1 year of history — a deeper backfill is pending"}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition ${
+                hz === h.k
+                  ? "bg-accent text-white shadow"
+                  : h.on
+                  ? "text-muted hover:text-white"
+                  : "text-muted/40 cursor-not-allowed"
+              }`}
+            >
+              {h.label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={sel || ""}
+          onChange={(e) => setSel(e.target.value || null)}
+          className="bg-ink/40 border border-line rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-accent max-w-[14rem]"
+        >
+          <option value="">All sectors</option>
+          {[...sectors]
+            .sort((a, b) => a.sector.localeCompare(b.sector))
+            .map((s) => (
+              <option key={s.sector} value={s.sector}>
+                {s.sector} ({s.count})
+              </option>
+            ))}
+        </select>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-5">
+        {/* chart + spotlight */}
+        <div className="lg:col-span-2">
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={rows} margin={{ top: 8, right: 10, left: -8, bottom: 0 }}>
+              <CartesianGrid stroke={t.grid} vertical={false} />
+              <XAxis dataKey="date" tick={AXIS} tickFormatter={spMonth} minTickGap={48} />
+              <YAxis tick={AXIS} width={46} tickFormatter={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(0)}%`} />
+              <ReferenceLine y={0} stroke={t.zero} />
+              <Tooltip
+                cursor={{ stroke: t.axis, strokeDasharray: "3 3" }}
+                content={({ active, payload, label }) => {
+                  if (!active || !payload?.length) return null;
+                  const mkt = payload.find((p) => p.dataKey === "__mkt");
+                  const items = payload.filter((p) => p.dataKey !== "__mkt" && p.value != null);
+                  let picks;
+                  if (sel) {
+                    picks = [items.find((p) => p.dataKey === sel), mkt].filter(Boolean);
+                  } else {
+                    const s = [...items].sort((a, b) => b.value - a.value);
+                    picks = [s[0], s[s.length - 1], mkt].filter(Boolean);
+                  }
+                  return box(
+                    spMonth(label),
+                    picks.map((p) => ({
+                      name: p.dataKey === "__mkt" ? "Market" : p.dataKey,
+                      color: p.dataKey === "__mkt" ? t.axis : colorOf[p.dataKey],
+                      value: spFmt(p.value),
+                    }))
+                  );
+                }}
+              />
+              {sectors.map((s) => {
+                const isSel = sel === s.sector;
+                const dim = sel && !isSel;
+                return (
+                  <Line
+                    key={s.sector}
+                    dataKey={s.sector}
+                    dot={false}
+                    isAnimationActive={false}
+                    stroke={dim ? t.grid : colorOf[s.sector]}
+                    strokeOpacity={sel ? (isSel ? 1 : 0.12) : 0.5}
+                    strokeWidth={isSel ? 2.75 : 1}
+                  />
+                );
+              })}
+              <Line
+                dataKey="__mkt"
+                name="Market"
+                dot={false}
+                isAnimationActive={false}
+                stroke={t.axis}
+                strokeWidth={1.5}
+                strokeDasharray="5 4"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted">
+            <LegendSwatch color={t.axis} label="Market composite (dashed)" />
+            <span>·</span>
+            <span>Rebased to 100 at the start of the {hzLabel} window</span>
+          </div>
+
+          {/* spotlight drill-down */}
+          {selObj ? (
+            <div className="mt-4 rounded-xl border border-accent/25 bg-accent/[0.04] p-4">
+              <div className="flex items-center gap-2 flex-wrap mb-3">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: colorOf[sel] }} />
+                <span className="font-semibold text-white">{sel}</span>
+                <span className="chip text-[10px] bg-line/40 text-muted">{selObj.count} stocks</span>
+                <button onClick={() => setSel(null)} className="ml-auto text-[11px] text-muted hover:text-white">
+                  Clear ✕
+                </button>
+              </div>
+              <div className="flex items-end gap-3 flex-wrap mb-4">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-muted">Composite · {hzLabel}</div>
+                  <div className={`text-2xl font-bold font-mono tabular-nums ${(selObj.ret ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                    {spFmt(selObj.ret)}
+                  </div>
+                </div>
+                <div className="text-xs text-muted pb-1">
+                  vs market{" "}
+                  <span className={(selObj.ret - mktRet) >= 0 ? "text-up" : "text-down"}>
+                    {spFmt(selObj.ret - mktRet)}
+                  </span>{" "}
+                  · rank #{rank} of {ranked.length}
+                </div>
+              </div>
+              {stat ? (
+                <div>
+                  <div className="flex justify-between text-[11px] text-muted mb-1">
+                    <span>Worst stock</span>
+                    <span>Median</span>
+                    <span>Best stock</span>
+                  </div>
+                  <div className="relative h-2.5 rounded-full overflow-hidden">
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-r from-down/50 via-line to-up/50" />
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-1.5 h-5 rounded-full bg-white shadow"
+                      style={{ left: `${pos(stat.median)}%` }}
+                      title={`Median ${spFmt(stat.median)}`}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-1.5 font-mono text-xs tabular-nums">
+                    <span className="text-down">{spFmt(stat.min)}</span>
+                    <span className={stat.median >= 0 ? "text-up font-semibold" : "text-down font-semibold"}>
+                      {spFmt(stat.median)}
+                    </span>
+                    <span className="text-up">{spFmt(stat.max)}</span>
+                  </div>
+                  <div className="text-[11px] text-muted mt-2">
+                    {stat.n} of {selObj.count} stocks have ≥{hzLabel} of history · spread of trailing returns
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-muted">No constituent has a full {hzLabel} of history yet.</div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-xl border border-line bg-ink/30 p-3 text-xs text-muted flex items-center gap-2 flex-wrap">
+              <span className="text-white/80 font-medium">Market composite {spFmt(mktRet)} over {hzLabel}</span>
+              {mStat && <span>· {mStat.n} stocks · median {spFmt(mStat.median)}</span>}
+              <span className="ml-auto">Pick a sector to see its stock-level spread →</span>
+            </div>
+          )}
+        </div>
+
+        {/* ranked list */}
+        <div className="rounded-xl border border-line bg-ink/30 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] uppercase tracking-wide text-muted">Return · {hzLabel}</span>
+            <span className="text-[11px] text-muted">{ranked.length} sectors</span>
+          </div>
+          <div className="space-y-0.5 max-h-[330px] overflow-y-auto pr-1">
+            {ranked.map((s) => {
+              const active = sel === s.sector;
+              return (
+                <button
+                  key={s.sector}
+                  onClick={() => setSel(active ? null : s.sector)}
+                  className={`w-full flex items-center gap-2 text-xs -mx-1 px-1.5 py-1 rounded-lg transition ${
+                    active ? "bg-accent/15" : "hover:bg-line/40"
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: colorOf[s.sector] }} />
+                  <span className="w-[7.5rem] truncate text-left text-white/90" title={s.sector}>
+                    {s.sector}
+                  </span>
+                  <span className="flex-1 h-1.5 rounded bg-line overflow-hidden">
+                    <span
+                      className={`${(s.ret ?? 0) >= 0 ? "bg-up" : "bg-down"} h-full block rounded`}
+                      style={{ width: `${Math.min(100, (Math.abs(s.ret ?? 0) / maxAbs) * 100)}%` }}
+                    />
+                  </span>
+                  <span className={`w-12 text-right font-mono tabular-nums ${(s.ret ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                    {spFmt(s.ret, false)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-muted mt-4">
+        Each sector curve is the median of its stocks&apos; prices rebased to the window start — a typical-stock read
+        robust to any single outlier. Descriptive performance, <span className="text-white">not investment advice</span>.
+      </p>
+    </div>
   );
 }

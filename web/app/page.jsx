@@ -1,6 +1,6 @@
 import { getLatest, fmtCr } from "./lib/data";
 import { Pct, SignalBadge, OiBadge, Stat, BreadthStat, Section, Score, SymbolLink, PageHeader } from "./components/ui";
-import { FiiDiiChart } from "./components/charts";
+import { FiiDiiChart, SectorPerformanceChart } from "./components/charts";
 import MoneyFlow from "./components/MoneyFlow";
 import MoversBoard from "./components/MoversBoard";
 import MarketBrief from "./components/MarketBrief";
@@ -266,6 +266,19 @@ export default async function Dashboard() {
           </div>
         </Section>
       </div>
+
+      {/* interactive sector performance explorer */}
+      {d.sector_performance?.sectors?.length > 0 && (
+        <Section
+          title="Sector Performance"
+          href="/sectors"
+          action="Sector matrix →"
+          info="dash.sector_performance"
+          desc="Composite return of every sector over your chosen window — pick a horizon, then spotlight a sector to see its stocks' min / median / max."
+        >
+          <SectorPerformanceChart data={d.sector_performance} />
+        </Section>
+      )}
 
       {/* top gainers & losers */}
       {d.movers && <MoversBoard movers={d.movers} />}

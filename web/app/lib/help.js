@@ -142,6 +142,23 @@ export const HELP = {
     ],
     source: "NSE EOD bhavcopy + sector map",
   },
+  "dash.sector_performance": {
+    title: "Sector Performance",
+    window: "1M · 3M · 6M · 1Y",
+    windowLong:
+      "Trailing windows over the ~1 year of price history kept locally. 2Y / 3Y unlock once a deeper backfill is run.",
+    what: "How each sector's stocks have performed over the selected window, as a rebased composite curve plus the spread of constituent returns.",
+    how: [
+      "Each sector's curve = the median of its stocks' prices, rebased to 100 at the window start — a typical-stock cumulative read robust to one blown-out name.",
+      "Pick a horizon to reset the window; pick a sector (dropdown or the ranked list) to spotlight it against the market composite.",
+      "The spotlight shows the count of stocks and their min / median / max return for the window.",
+    ],
+    benchmarks: [
+      { label: "above market line", note: "sector outperforming the all-stock median", tone: "up" },
+      { label: "below market line", note: "sector lagging the median", tone: "down" },
+    ],
+    source: "NSE EOD bhavcopy history + sector map",
+  },
   "dash.earnings_radar": {
     title: "Earnings Radar",
     window: "Forward calendar + 30-day filings",
