@@ -1048,6 +1048,7 @@ export function SectorPerformanceChart({ data }) {
   const t = useChartTheme();
   const [hz, setHz] = useState("1y");
   const [sel, setSel] = useState(null);
+  const [hov, setHov] = useState(null);
 
   const sectors = data?.sectors || [];
   const colorOf = useMemo(() => {
@@ -1105,6 +1106,14 @@ export function SectorPerformanceChart({ data }) {
       ? Math.max(0, Math.min(100, ((v - stat.min) / (stat.max - stat.min)) * 100))
       : 50;
 
+  // sector being emphasised on the chart — a click pins it, a hover previews it
+  const emph = sel || hov;
+  const emphColor = emph ? colorOf[emph] : "#5b8cff";
+  const leader = ranked[0];
+  const laggard = ranked[ranked.length - 1];
+  const adv = ranked.filter((s) => (s.ret ?? 0) >= 0).length;
+  const dec = ranked.length - adv;
+
   return (
     <div>
       {/* controls */}
@@ -1144,11 +1153,62 @@ export function SectorPerformanceChart({ data }) {
         </select>
       </div>
 
+      {/* at-a-glance KPI band */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-4">
+        <button
+          onClick={() => setSel(sel === leader?.sector ? null : leader?.sector)}
+          onMouseEnter={() => setHov(leader?.sector)}
+          onMouseLeave={() => setHov(null)}
+          className="text-left rounded-xl border border-up/20 bg-up/[0.05] p-3 transition hover:border-up/40"
+        >
+          <div className="text-[10px] uppercase tracking-wide text-muted mb-1">Leader · {hzLabel}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: colorOf[leader?.sector] }} />
+            <span className="text-sm font-semibold text-white truncate" title={leader?.sector}>{leader?.sector}</span>
+          </div>
+          <div className="text-lg font-bold font-mono tabular-nums text-up mt-0.5">{spFmt(leader?.ret)}</div>
+        </button>
+        <button
+          onClick={() => setSel(sel === laggard?.sector ? null : laggard?.sector)}
+          onMouseEnter={() => setHov(laggard?.sector)}
+          onMouseLeave={() => setHov(null)}
+          className="text-left rounded-xl border border-down/20 bg-down/[0.05] p-3 transition hover:border-down/40"
+        >
+          <div className="text-[10px] uppercase tracking-wide text-muted mb-1">Laggard · {hzLabel}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: colorOf[laggard?.sector] }} />
+            <span className="text-sm font-semibold text-white truncate" title={laggard?.sector}>{laggard?.sector}</span>
+          </div>
+          <div className="text-lg font-bold font-mono tabular-nums text-down mt-0.5">{spFmt(laggard?.ret)}</div>
+        </button>
+        <div className="rounded-xl border border-line bg-ink/30 p-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted mb-1">Market composite</div>
+          <div className="text-sm font-semibold text-white">All {mStat?.n ?? "—"} stocks</div>
+          <div className={`text-lg font-bold font-mono tabular-nums mt-0.5 ${(mktRet ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+            {spFmt(mktRet)}
+          </div>
+        </div>
+        <div className="rounded-xl border border-line bg-ink/30 p-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted mb-1">Breadth</div>
+          <div className="text-sm font-semibold text-white">{adv} up · {dec} down</div>
+          <div className="mt-2 flex h-2 rounded-full overflow-hidden bg-line">
+            <span className="bg-up h-full" style={{ width: `${(adv / ranked.length) * 100}%` }} />
+            <span className="bg-down h-full" style={{ width: `${(dec / ranked.length) * 100}%` }} />
+          </div>
+        </div>
+      </div>
+
       <div className="grid lg:grid-cols-3 gap-5">
         {/* chart + spotlight */}
         <div className="lg:col-span-2">
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={rows} margin={{ top: 8, right: 10, left: -8, bottom: 0 }}>
+            <ComposedChart data={rows} margin={{ top: 8, right: 10, left: -8, bottom: 0 }}>
+              <defs>
+                <linearGradient id="spEmphFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={emphColor} stopOpacity={0.28} />
+                  <stop offset="100%" stopColor={emphColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid stroke={t.grid} vertical={false} />
               <XAxis dataKey="date" tick={AXIS} tickFormatter={spMonth} minTickGap={48} />
               <YAxis tick={AXIS} width={46} tickFormatter={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(0)}%`} />
@@ -1160,8 +1220,8 @@ export function SectorPerformanceChart({ data }) {
                   const mkt = payload.find((p) => p.dataKey === "__mkt");
                   const items = payload.filter((p) => p.dataKey !== "__mkt" && p.value != null);
                   let picks;
-                  if (sel) {
-                    picks = [items.find((p) => p.dataKey === sel), mkt].filter(Boolean);
+                  if (emph) {
+                    picks = [items.find((p) => p.dataKey === emph), mkt].filter(Boolean);
                   } else {
                     const s = [...items].sort((a, b) => b.value - a.value);
                     picks = [s[0], s[s.length - 1], mkt].filter(Boolean);
@@ -1177,8 +1237,8 @@ export function SectorPerformanceChart({ data }) {
                 }}
               />
               {sectors.map((s) => {
-                const isSel = sel === s.sector;
-                const dim = sel && !isSel;
+                if (s.sector === emph) return null; // emphasised drawn as an area on top
+                const dim = !!emph;
                 return (
                   <Line
                     key={s.sector}
@@ -1186,8 +1246,8 @@ export function SectorPerformanceChart({ data }) {
                     dot={false}
                     isAnimationActive={false}
                     stroke={dim ? t.grid : colorOf[s.sector]}
-                    strokeOpacity={sel ? (isSel ? 1 : 0.12) : 0.5}
-                    strokeWidth={isSel ? 2.75 : 1}
+                    strokeOpacity={emph ? 0.12 : 0.5}
+                    strokeWidth={1}
                   />
                 );
               })}
@@ -1200,12 +1260,25 @@ export function SectorPerformanceChart({ data }) {
                 strokeWidth={1.5}
                 strokeDasharray="5 4"
               />
-            </LineChart>
+              {emph && (
+                <Area
+                  dataKey={emph}
+                  isAnimationActive={false}
+                  baseValue={0}
+                  stroke={emphColor}
+                  strokeWidth={2.75}
+                  fill="url(#spEmphFill)"
+                  dot={false}
+                  activeDot={{ r: 3, fill: emphColor, stroke: t.ink }}
+                />
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted">
             <LegendSwatch color={t.axis} label="Market composite (dashed)" />
             <span>·</span>
             <span>Rebased to 100 at the start of the {hzLabel} window</span>
+            {!sel && <span className="ml-auto text-muted/70">Hover or click a sector to spotlight it →</span>}
           </div>
 
           {/* spotlight drill-down */}
@@ -1241,10 +1314,12 @@ export function SectorPerformanceChart({ data }) {
                     <span>Median</span>
                     <span>Best stock</span>
                   </div>
-                  <div className="relative h-2.5 rounded-full overflow-hidden">
+                  <div className="relative h-2.5 rounded-full overflow-visible">
                     <div className="absolute inset-0 rounded-full bg-gradient-to-r from-down/50 via-line to-up/50" />
+                    <span className="absolute top-1/2 -translate-y-1/2 left-0 w-0.5 h-3.5 rounded bg-down/80" />
+                    <span className="absolute top-1/2 -translate-y-1/2 right-0 w-0.5 h-3.5 rounded bg-up/80" />
                     <div
-                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-1.5 h-5 rounded-full bg-white shadow"
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-1.5 h-5 rounded-full bg-white shadow ring-2 ring-accent/40"
                       style={{ left: `${pos(stat.median)}%` }}
                       title={`Median ${spFmt(stat.median)}`}
                     />
@@ -1273,34 +1348,42 @@ export function SectorPerformanceChart({ data }) {
           )}
         </div>
 
-        {/* ranked list */}
+        {/* ranked list — diverging bars around a centre line */}
         <div className="rounded-xl border border-line bg-ink/30 p-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] uppercase tracking-wide text-muted">Return · {hzLabel}</span>
             <span className="text-[11px] text-muted">{ranked.length} sectors</span>
           </div>
-          <div className="space-y-0.5 max-h-[330px] overflow-y-auto pr-1">
-            {ranked.map((s) => {
+          <div className="space-y-0.5 max-h-[360px] overflow-y-auto pr-1">
+            {ranked.map((s, i) => {
               const active = sel === s.sector;
+              const previewed = hov === s.sector;
+              const up = (s.ret ?? 0) >= 0;
+              const half = Math.min(50, (Math.abs(s.ret ?? 0) / maxAbs) * 50);
               return (
                 <button
                   key={s.sector}
                   onClick={() => setSel(active ? null : s.sector)}
+                  onMouseEnter={() => setHov(s.sector)}
+                  onMouseLeave={() => setHov(null)}
                   className={`w-full flex items-center gap-2 text-xs -mx-1 px-1.5 py-1 rounded-lg transition ${
-                    active ? "bg-accent/15" : "hover:bg-line/40"
+                    active ? "bg-accent/15 ring-1 ring-accent/30" : previewed ? "bg-line/50" : "hover:bg-line/40"
                   }`}
                 >
+                  <span className="w-4 text-right text-[10px] tabular-nums text-muted/70 shrink-0">{i + 1}</span>
                   <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: colorOf[s.sector] }} />
-                  <span className="w-[7.5rem] truncate text-left text-white/90" title={s.sector}>
+                  <span className="w-[6.5rem] truncate text-left text-white/90" title={s.sector}>
                     {s.sector}
                   </span>
-                  <span className="flex-1 h-1.5 rounded bg-line overflow-hidden">
-                    <span
-                      className={`${(s.ret ?? 0) >= 0 ? "bg-up" : "bg-down"} h-full block rounded`}
-                      style={{ width: `${Math.min(100, (Math.abs(s.ret ?? 0) / maxAbs) * 100)}%` }}
-                    />
+                  <span className="relative flex-1 h-2 rounded bg-line/40">
+                    <span className="absolute top-0 bottom-0 left-1/2 w-px bg-line" />
+                    {up ? (
+                      <span className="absolute top-0 bottom-0 left-1/2 bg-up rounded-r" style={{ width: `${half}%` }} />
+                    ) : (
+                      <span className="absolute top-0 bottom-0 right-1/2 bg-down rounded-l" style={{ width: `${half}%` }} />
+                    )}
                   </span>
-                  <span className={`w-12 text-right font-mono tabular-nums ${(s.ret ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                  <span className={`w-12 text-right font-mono tabular-nums ${up ? "text-up" : "text-down"}`}>
                     {spFmt(s.ret, false)}
                   </span>
                 </button>
