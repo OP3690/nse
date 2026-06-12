@@ -15,7 +15,7 @@ const NO_FLASH = `(function(){try{var t=localStorage.getItem('theme');if(t==='li
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
       </head>
