@@ -1,4 +1,5 @@
 import InfoDot from "./InfoDot";
+import OwnershipDonut from "./OwnershipDonut";
 
 // Category identity colors (stable across light/dark) for the composition bars.
 const CAT_COLOR = {
@@ -124,8 +125,16 @@ export default function ShareholdingFlow({ data }) {
         ownership groups — shown as the shift in holding % and an estimated ₹ value.
       </p>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        {cats.map((c) => <CatTile key={c.key} c={c} />)}
+      <div className="grid lg:grid-cols-[minmax(0,260px)_1fr] gap-4 items-center">
+        <div className="rounded-xl border border-line bg-panel2/30 p-2">
+          <div className="text-[11px] uppercase tracking-wide text-muted font-semibold mb-1 pl-1">
+            Ownership mix · {fmtDate(data.asof)}
+          </div>
+          <OwnershipDonut categories={cats} />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {cats.map((c) => <CatTile key={c.key} c={c} />)}
+        </div>
       </div>
 
       {hasFlow && (

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getStock, fmtCr } from "../../lib/data";
-import { Pct, SignalBadge, OiBadge, Score, Stat, TrendBadge, TrendScore, Confidence } from "../../components/ui";
+import { Pct, SignalBadge, OiBadge, Score, Stat } from "../../components/ui";
 import { PriceDeliveryChart, OiChart } from "../../components/charts";
 import StockTechnicals from "../../components/StockTechnicals";
+import StockIntelligence from "../../components/StockIntelligence";
 import ShareholdingFlow from "../../components/ShareholdingFlow";
 import ManagementSummary from "../../components/ManagementSummary";
 import InfoDot from "../../components/InfoDot";
@@ -135,64 +136,8 @@ export default async function StockPage({ params }) {
 
       {d.corp && <ManagementSummary corp={d.corp} />}
 
-      {m.composite != null && (
-        <section className="card border border-line bg-panel2">
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-            <h2 className="card-title mb-0 flex items-center gap-2"><span>Quant Model</span><InfoDot topic="stock.quant_model" /></h2>
-            <div className="flex gap-6 text-sm font-mono flex-wrap">
-              <div title="Cross-sectional composite z-score vs the whole universe.">
-                <span className="text-muted block text-xs">Composite</span>
-                <span className={m.composite >= 0 ? "text-up" : "text-down"}>{m.composite.toFixed(2)}</span>
-              </div>
-              <div><span className="text-muted block text-xs">Up prob 5d</span>
-                <span className={m.up_prob_5d >= 50 ? "text-up" : "text-down"}>{m.up_prob_5d}%</span></div>
-              <div><span className="text-muted block text-xs">Up prob 20d</span>
-                <span className={m.up_prob_20d >= 50 ? "text-up" : "text-down"}>{m.up_prob_20d}%</span></div>
-              <div><span className="text-muted block text-xs">Momentum</span>{m.factor_momentum}</div>
-              <div><span className="text-muted block text-xs">Trend</span>{m.factor_trend}</div>
-              <div><span className="text-muted block text-xs">Flow</span>{m.factor_flow}</div>
-              {m.vol_20 != null && <div><span className="text-muted block text-xs">Daily vol</span>{m.vol_20}%</div>}
-              {m.mdd_60 != null && <div><span className="text-muted block text-xs">Max DD 60d</span><span className="text-down">{m.mdd_60}%</span></div>}
-            </div>
-          </div>
-          <p className="text-xs text-muted mt-2">
-            Probabilities are calibrated to a cross-sectional logistic — relative ranking, not certainty.
-          </p>
-        </section>
-      )}
-
-      {f && (
-        <section className="card border border-line">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mb-3">
-            <div className="flex items-center gap-3">
-              <h2 className="card-title mb-0 flex items-center gap-2"><span>Trend Forecast</span><InfoDot topic="stock.trend_forecast" /></h2>
-              <TrendBadge label={f.trend_label} />
-            </div>
-            <div className="flex items-center gap-2"><span className="text-xs text-muted">Score</span><TrendScore value={f.trend_score} /></div>
-            <div className="flex items-center gap-2"><span className="text-xs text-muted">Confidence</span><Confidence value={f.confidence} /></div>
-            {f.rsi != null && <div className="text-sm font-mono"><span className="text-muted">RSI </span>{f.rsi}</div>}
-            {f.wk52_pos != null && <div className="text-sm font-mono"><span className="text-muted">52w pos </span>{f.wk52_pos}%</div>}
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div className="card-title text-up">Bullish factors</div>
-              <ul className="text-sm text-muted space-y-1 mt-1">
-                {(f.reasons_bull || []).map((r, i) => <li key={i}>· {r}</li>)}
-                {!(f.reasons_bull || []).length && <li className="text-muted/60">None</li>}
-              </ul>
-            </div>
-            <div>
-              <div className="card-title text-down">Bearish factors</div>
-              <ul className="text-sm text-muted space-y-1 mt-1">
-                {(f.reasons_bear || []).map((r, i) => <li key={i}>· {r}</li>)}
-                {!(f.reasons_bear || []).length && <li className="text-muted/60">None</li>}
-              </ul>
-            </div>
-          </div>
-          <p className="text-xs text-muted mt-3">
-            Continuation probability from price/delivery/OI trends — not a price target.
-          </p>
-        </section>
+      {(m.composite != null || f) && (
+        <StockIntelligence meta={m} forecast={f} />
       )}
 
       <div className="grid lg:grid-cols-2 gap-6">
