@@ -144,3 +144,17 @@ input:focus-visible, select:focus-visible {
 
 @keyframes rrg-spin { to { transform: rotate(360deg); } }
 .rrg-spin { display: inline-block; animation: rrg-spin 6s linear infinite; }
+
+/* Respect the OS "reduce motion" setting: drop entrance animations and the
+   infinite spin, and neutralise any transition/animation durations so nothing
+   moves for users with vestibular sensitivity. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise { animation: none; }
+  .rrg-spin { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
