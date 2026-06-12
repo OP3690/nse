@@ -126,6 +126,16 @@ input:focus-visible, select:focus-visible {
   }
 }
 
+/* Horizontal scroll affordance for the mobile nav: hide the scrollbar and
+   fade both edges so it reads as "there's more to scroll". The 12px left inset
+   matches the wrapper's px-3 padding, so the first item never looks clipped. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.edge-fade-x {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 18px), transparent 100%);
+}
+
 @keyframes intel-rise {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }

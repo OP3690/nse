@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 // Compact, single-letter-free section glyphs. Each is a 16px stroke icon so the
 // nav stays scannable without crowding the bar. Kept inline to avoid an icon dep.
@@ -31,6 +32,15 @@ const LINKS = [
 
 export default function NavBar() {
   const path = usePathname() || "/";
+  const activeRef = useRef(null);
+
+  // On a narrow viewport the nav scrolls horizontally; keep the active tab in
+  // view. block:"nearest" prevents any vertical page jump, and it's a no-op for
+  // the desktop (non-scrolling) instance.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [path]);
+
   return (
     <nav className="flex items-center gap-0.5 rounded-xl border border-line/70 bg-panel2/30 p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.03)]">
       {LINKS.map(([href, label]) => {
@@ -39,6 +49,7 @@ export default function NavBar() {
           <Link
             key={href}
             href={href}
+            ref={active ? activeRef : undefined}
             aria-current={active ? "page" : undefined}
             className={`group relative flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-[13px] font-medium leading-none transition-all duration-200 ${
               active

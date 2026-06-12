@@ -54,7 +54,7 @@ export default function RootLayout({ children }) {
               </span>
             </div>
           </div>
-          <div className="md:hidden border-t border-line/60 px-3 py-2 overflow-x-auto">
+          <div className="md:hidden border-t border-line/60 px-3 py-2 overflow-x-auto no-scrollbar edge-fade-x">
             <NavBar />
           </div>
         </header>
