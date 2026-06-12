@@ -10,6 +10,7 @@ const ICONS = {
   "/pulse": "M4 19V5m5 14V9m5 10V4m5 15v-7",                       // bars
   "/forecast": "M3 17l5-5 4 3 8-9M21 6h-4m4 0v4",                  // trend arrow
   "/flows": "M4 7h12m0 0-3-3m3 3-3 3M20 17H8m0 0 3-3m-3 3 3 3",   // bi-directional flow
+  "/sectors": "M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6V11h-6v9Zm0-16v5h6V4h-6Z", // grid/tiles
   "/intelligence": "M12 3a6 6 0 0 0-4 10.5V17h8v-3.5A6 6 0 0 0 12 3ZM9 20h6m-5 2h4", // bulb
   "/ipo": "M12 3v3m0 12v3m9-9h-3M6 12H3m13.5-6.5-2 2m-7 7-2 2m11 0-2-2m-7-7-2-2", // radar/burst
   "/screener": "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 4 4",   // magnifier
@@ -21,6 +22,7 @@ const LINKS = [
   ["/pulse", "Market Pulse"],
   ["/forecast", "Forecast"],
   ["/flows", "Flows"],
+  ["/sectors", "Sectors"],
   ["/intelligence", "Intelligence"],
   ["/ipo", "IPO Radar"],
   ["/screener", "Screener"],
