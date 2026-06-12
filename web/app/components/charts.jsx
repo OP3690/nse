@@ -39,7 +39,7 @@ function readChrome() {
   };
 }
 
-function useChartTheme() {
+export function useChartTheme() {
   const [chrome, setChrome] = useState(DARK_CHROME);
   useEffect(() => {
     const update = () => setChrome(readChrome());

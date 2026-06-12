@@ -223,8 +223,10 @@ export default async function StockPage({ params }) {
         </div>
         <StockTechnicals data={hist} />
         <p className="text-xs text-muted mt-3">
-          Close with 20/50-day moving averages and Bollinger Bands (20, 2σ); volume shaded by day
-          direction; RSI(14) below — above 70 overbought, below 30 oversold. Indicators are
+          Price pane overlays 20/50/200-period moving averages (SMA or EMA), Bollinger Bands (20, 2σ),
+          rolling VWAP and a 20-day Donchian channel, with golden/death-cross markers. Sub-panes show
+          volume vs its 20-day average, MACD (12, 26, 9) and RSI(14) — above 70 overbought, below 30
+          oversold. The posture row summarises trend, momentum and volatility. All indicators are
           computed from end-of-day prices, not investment advice.
         </p>
       </section>
