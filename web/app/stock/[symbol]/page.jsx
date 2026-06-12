@@ -3,6 +3,7 @@ import { getStock, fmtCr } from "../../lib/data";
 import { Pct, SignalBadge, OiBadge, Score, Stat } from "../../components/ui";
 import { PriceDeliveryChart, OiChart } from "../../components/charts";
 import StockTechnicals from "../../components/StockTechnicals";
+import StockAnalytics from "../../components/StockAnalytics";
 import StockIntelligence from "../../components/StockIntelligence";
 import ShareholdingFlow from "../../components/ShareholdingFlow";
 import ManagementSummary from "../../components/ManagementSummary";
@@ -160,6 +161,8 @@ export default async function StockPage({ params }) {
       {d.shareholding && d.shareholding.categories && (
         <ShareholdingFlow data={d.shareholding} />
       )}
+
+      {hist.length >= 10 && <StockAnalytics data={hist} />}
 
       <section className="card">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
