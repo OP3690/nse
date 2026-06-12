@@ -1087,6 +1087,61 @@ export function SectorPerformanceChart({ data }) {
     return { rows, ranked, maxAbs, mktReb, mktRet, sessions };
   }, [data, sectors, hz]);
 
+  // auto-generated, horizon-aware takeaways — breadth, rotation, dispersion
+  const insights = useMemo(() => {
+    if (!view) return [];
+    const { ranked, mktRet } = view;
+    const dates = data?.dates || [];
+    const n = dates.length;
+    const s1m = data?.sessions?.["1m"] ?? 21;
+    const start1m = Math.max(0, n - 1 - s1m);
+    const ret1m = (series) => {
+      const b = series?.[start1m], l = series?.[n - 1];
+      return b != null && l != null && b !== 0 ? (l / b - 1) * 100 : null;
+    };
+    const mom = ranked.map((s) => ({ ...s, m1: ret1m(s.series) }));
+    const out = [];
+
+    // 1) breadth & regime
+    const beat = ranked.filter((s) => (s.ret ?? -1e9) > (mktRet ?? 0)).length;
+    const majUp = ranked.filter((s) => (s.stats?.[hz]?.median ?? -1) > 0).length;
+    out.push({
+      kind: "breadth",
+      beat,
+      total: ranked.length,
+      majUp,
+      mktMedian: data?.market?.stats?.[hz]?.median ?? null,
+      tone: beat * 2 >= ranked.length ? "up" : "down",
+    });
+
+    // 2) momentum rotation — surface the single most notable shift (window > 1M)
+    if (hz !== "1m") {
+      const turnUp = mom
+        .filter((s) => (s.ret ?? 0) < 0 && (s.m1 ?? -99) > 1.5)
+        .sort((a, b) => b.m1 - a.m1)[0];
+      const rollOver = mom
+        .filter((s) => (s.ret ?? 0) > 0 && (s.m1 ?? 99) < -1.5)
+        .sort((a, b) => a.m1 - b.m1)[0];
+      const upMag = turnUp ? turnUp.m1 : -1e9;
+      const downMag = rollOver ? -rollOver.m1 : -1e9;
+      if (upMag >= downMag && turnUp) {
+        out.push({ kind: "turnUp", sector: turnUp.sector, ret: turnUp.ret, m1: turnUp.m1, tone: "up" });
+      } else if (rollOver) {
+        out.push({ kind: "rollOver", sector: rollOver.sector, ret: rollOver.ret, m1: rollOver.m1, tone: "down" });
+      }
+    }
+
+    // 3) widest constituent dispersion — where stock selection matters most
+    const disp = ranked
+      .map((s) => ({ sector: s.sector, st: s.stats?.[hz] }))
+      .filter((d) => d.st && d.st.max != null && d.st.min != null)
+      .map((d) => ({ ...d, spread: d.st.max - d.st.min }))
+      .sort((a, b) => b.spread - a.spread)[0];
+    if (disp) out.push({ kind: "disp", sector: disp.sector, min: disp.st.min, max: disp.st.max, median: disp.st.median, tone: "accent" });
+
+    return out.slice(0, 3);
+  }, [view, data, hz]);
+
   if (!sectors.length || !view) {
     return (
       <div className="text-sm text-muted py-10 text-center">
@@ -1392,6 +1447,76 @@ export function SectorPerformanceChart({ data }) {
           </div>
         </div>
       </div>
+
+      {/* auto-generated takeaways */}
+      {insights.length > 0 && (
+        <div className="mt-5">
+          <div className="text-[11px] uppercase tracking-wide text-muted mb-2">What the data is telling you · {hzLabel}</div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {insights.map((ins) => {
+              const tone =
+                ins.tone === "up" ? "text-up" : ins.tone === "down" ? "text-down" : "text-accent";
+              const ring =
+                ins.tone === "up" ? "border-up/25" : ins.tone === "down" ? "border-down/25" : "border-accent/25";
+              if (ins.kind === "breadth") {
+                return (
+                  <div key="breadth" className={`rounded-xl border ${ring} bg-ink/30 p-3`}>
+                    <div className="text-[10px] uppercase tracking-wide text-muted mb-1">Market breadth</div>
+                    <div className="text-sm text-white/90 leading-snug">
+                      <span className={`font-bold ${tone}`}>{ins.beat} of {ins.total}</span> sectors beat the market.
+                    </div>
+                    <div className="text-[11px] text-muted mt-1.5">
+                      {ins.majUp} sectors have most stocks up (median &gt; 0)
+                      {ins.mktMedian != null && <> · median NSE stock {spFmt(ins.mktMedian)}</>}.
+                    </div>
+                  </div>
+                );
+              }
+              if (ins.kind === "turnUp" || ins.kind === "rollOver") {
+                const up = ins.kind === "turnUp";
+                return (
+                  <button
+                    key={ins.kind}
+                    onClick={() => setSel(ins.sector)}
+                    className={`text-left rounded-xl border ${ring} bg-ink/30 p-3 transition hover:bg-line/30`}
+                  >
+                    <div className="text-[10px] uppercase tracking-wide text-muted mb-1">
+                      {up ? "Turning up" : "Losing steam"}
+                    </div>
+                    <div className="text-sm text-white/90 leading-snug">
+                      <span className="font-semibold text-white">{ins.sector}</span>{" "}
+                      <span className={`font-bold ${tone}`}>{spFmt(ins.m1)}</span> last month.
+                    </div>
+                    <div className="text-[11px] text-muted mt-1.5">
+                      {up
+                        ? `Down ${spFmt(ins.ret, false)} over ${hzLabel} but leading the recent tape — a possible reversal.`
+                        : `Up ${spFmt(ins.ret, false)} over ${hzLabel} yet rolling over lately — momentum is cooling.`}
+                    </div>
+                  </button>
+                );
+              }
+              // dispersion
+              return (
+                <button
+                  key="disp"
+                  onClick={() => setSel(ins.sector)}
+                  className={`text-left rounded-xl border ${ring} bg-ink/30 p-3 transition hover:bg-line/30`}
+                >
+                  <div className="text-[10px] uppercase tracking-wide text-muted mb-1">Stock-picker&apos;s sector</div>
+                  <div className="text-sm text-white/90 leading-snug">
+                    <span className="font-semibold text-white">{ins.sector}</span> stocks span{" "}
+                    <span className="font-bold text-down">{spFmt(ins.min, false)}</span> to{" "}
+                    <span className="font-bold text-up">{spFmt(ins.max, false)}</span>.
+                  </div>
+                  <div className="text-[11px] text-muted mt-1.5">
+                    Widest constituent spread over {hzLabel} — selection matters most here.
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <p className="text-[11px] text-muted mt-4">
         Each sector curve is the median of its stocks&apos; prices rebased to the window start — a typical-stock read
