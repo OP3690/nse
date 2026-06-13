@@ -125,7 +125,6 @@ function StreakChip({ label, s }) {
 
 export function FiiDiiChart({ data }) {
   const t = useChartTheme();
-  const [view, setView] = useState("both"); // both | bars | trend
   const AXIS = { stroke: t.axis, fontSize: 11 };
   const GRID = t.grid;
 
@@ -151,9 +150,11 @@ export function FiiDiiChart({ data }) {
   }, [data]);
 
   const last = rows[rows.length - 1] || {};
-  const showBars = view === "both" || view === "bars";
-  const showTrend = view === "both" || view === "trend";
-  const barOpacity = view === "both" ? 0.5 : 0.92;
+  // Combined view always: daily bars (semi-transparent) under both cumulative areas
+  // plus the dashed regression trend — no toggle, everything reads at once.
+  const showBars = true;
+  const showTrend = true;
+  const barOpacity = 0.5;
   const accumulating = slope >= 0;
   const fiiStreak = lastStreak(rows, "fii");
   const diiStreak = lastStreak(rows, "dii");
@@ -171,11 +172,9 @@ export function FiiDiiChart({ data }) {
     return box(label, items);
   };
 
-  const TABS = [["both", "Both"], ["bars", "Daily"], ["trend", "Trend"]];
-
   return (
     <div className="grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-5">
-      {/* Left rail: cumulative scoreboard + regime banner + view toggle */}
+      {/* Left rail: cumulative scoreboard + regime banner */}
       <div className="flex flex-col gap-2.5">
         <div className="text-[10px] uppercase tracking-wider text-muted font-semibold">
           Cumulative · {rows.length} sessions
@@ -186,16 +185,25 @@ export function FiiDiiChart({ data }) {
           <RailStat label="Combined" value={totals.comb} color="#a78bfa" />
         </div>
 
-        {/* accumulation / distribution regime, read from the regression slope */}
-        <div className={`rounded-lg border px-3 py-2 ${accumulating ? "border-up/30 bg-up/5" : "border-down/30 bg-down/5"}`}>
+        {/* accumulation / distribution regime, read from the regression slope.
+            The slope of the combined cumulative line = average daily FII+DII net
+            flow, so we surface that exact number with a plain-language label. */}
+        <div
+          className={`rounded-lg border px-3 py-2 ${accumulating ? "border-up/30 bg-up/5" : "border-down/30 bg-down/5"}`}
+          title={`Over these ${rows.length} sessions, institutions (FII + DII combined) have on average ${accumulating ? "bought" : "sold"} ${crFull(Math.round(slope))} of equities per session — the slope of the cumulative net-flow line. ${accumulating ? "Net buying = accumulation." : "Net selling = distribution."}`}
+        >
           <div className="flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full ${accumulating ? "bg-up" : "bg-down"} animate-pulse`} />
             <span className={`text-xs font-bold ${accumulating ? "text-up" : "text-down"}`}>
               {accumulating ? "Accumulating" : "Distributing"}
             </span>
           </div>
-          <div className="text-[10px] text-muted mt-0.5">
-            trend ≈ <span className="font-mono text-white/80">{crK(Math.round(slope))}</span>/session
+          <div className="text-[10px] text-muted mt-0.5 leading-snug">
+            Institutions net{" "}
+            <span className={`font-mono font-semibold ${accumulating ? "text-up" : "text-down"}`}>
+              {crFull(Math.round(slope))}
+            </span>{" "}
+            <span className="text-muted/80">avg / session</span>
           </div>
         </div>
 
@@ -203,23 +211,6 @@ export function FiiDiiChart({ data }) {
         <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
           <StreakChip label="FII" s={fiiStreak} />
           <StreakChip label="DII" s={diiStreak} />
-        </div>
-
-        {/* view toggle */}
-        <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-line/70 bg-panel2/40 p-0.5 text-[11px] font-semibold">
-          {TABS.map(([k, lbl]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setView(k)}
-              aria-pressed={view === k}
-              className={`px-2 py-1 rounded-md transition-colors ${
-                view === k ? "bg-accent/20 text-accent" : "text-muted hover:text-white"
-              }`}
-            >
-              {lbl}
-            </button>
-          ))}
         </div>
       </div>
 
