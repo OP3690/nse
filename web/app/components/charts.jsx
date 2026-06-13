@@ -73,48 +73,171 @@ function LegendSwatch({ color, label }) {
   );
 }
 
+// Compact ₹-crore axis label: 0 → "0", lakh-crore → "1.2L", else thousands "34k".
+function crK(v) {
+  if (v === 0) return "0";
+  const a = Math.abs(v), s = v < 0 ? "-" : "";
+  if (a >= 100000) return `${s}₹${(a / 100000).toFixed(1)}L`;
+  if (a >= 1000) return `${s}₹${(a / 1000).toFixed(0)}k`;
+  return `${s}₹${Math.round(a)}`;
+}
+const crFull = (v) => `${v >= 0 ? "+" : ""}₹${Number(v).toLocaleString("en-IN")} Cr`;
+
+// One cumulative-flow figure in the header: label, signed ₹ value, up/down arrow.
+function FlowStat({ label, value, color }) {
+  const up = value >= 0;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] uppercase tracking-wider text-muted font-semibold">{label}</span>
+      <span className="font-mono text-base font-bold tabular-nums leading-none" style={{ color }}>
+        <span className="mr-0.5 text-xs">{up ? "▲" : "▼"}</span>{crFull(value)}
+      </span>
+    </div>
+  );
+}
+
 export function FiiDiiChart({ data }) {
   const t = useChartTheme();
+  const [view, setView] = useState("both"); // both | bars | trend
   const AXIS = { stroke: t.axis, fontSize: 11 };
   const GRID = t.grid;
+
+  // Accumulate running cumulative net for FII, DII and the combined institutional
+  // line, then fit a least-squares regression of the combined cumulative against
+  // the session index — its slope tells us whether the window is net accumulating
+  // (rising) or distributing (falling), and gives the straight dashed trendline.
+  const { rows, slope, totals } = useMemo(() => {
+    let fc = 0, dc = 0, cc = 0;
+    const rows = (data || []).map((d) => {
+      const fii = d.fii || 0, dii = d.dii || 0;
+      fc += fii; dc += dii; cc += fii + dii;
+      return { date: d.date, fii, dii, fii_cum: fc, dii_cum: dc, comb_cum: cc };
+    });
+    const n = rows.length;
+    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+    rows.forEach((r, i) => { sx += i; sy += r.comb_cum; sxy += i * r.comb_cum; sxx += i * i; });
+    const denom = n * sxx - sx * sx;
+    const slope = denom ? (n * sxy - sx * sy) / denom : 0;
+    const intercept = n ? (sy - slope * sx) / n : 0;
+    rows.forEach((r, i) => { r.trend = intercept + slope * i; });
+    return { rows, slope, totals: { fii: fc, dii: dc, comb: cc } };
+  }, [data]);
+
+  const last = rows[rows.length - 1] || {};
+  const showBars = view === "both" || view === "bars";
+  const showTrend = view === "both" || view === "trend";
+  const barOpacity = view === "both" ? 0.5 : 0.92;
+  const accumulating = slope >= 0;
+
+  const TOOLTIP = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    const byKey = {};
+    payload.forEach((p) => { byKey[p.dataKey] = p.value; });
+    const items = [];
+    if (byKey.fii != null) items.push({ name: "FII (day)", color: byKey.fii >= 0 ? "#16c784" : "#ea3943", value: `${crFull(byKey.fii)} ${byKey.fii >= 0 ? "buy" : "sell"}` });
+    if (byKey.dii != null) items.push({ name: "DII (day)", color: byKey.dii >= 0 ? "#5b8cff" : "#f0a020", value: `${crFull(byKey.dii)} ${byKey.dii >= 0 ? "buy" : "sell"}` });
+    if (byKey.fii_cum != null) items.push({ name: "FII cumulative", color: "#16c784", value: crFull(byKey.fii_cum) });
+    if (byKey.dii_cum != null) items.push({ name: "DII cumulative", color: "#5b8cff", value: crFull(byKey.dii_cum) });
+    if (byKey.trend != null) items.push({ name: "Trend", color: "#a78bfa", value: crFull(Math.round(byKey.trend)) });
+    return box(label, items);
+  };
+
+  const TABS = [["both", "Both"], ["bars", "Daily"], ["trend", "Trend"]];
+
   return (
     <div>
-      <ResponsiveContainer width="100%" height={220}>
-        <BarChart data={data} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-          <CartesianGrid stroke={GRID} vertical={false} />
-          <XAxis dataKey="date" tick={AXIS} tickFormatter={(d) => d?.slice(5)} />
-          <YAxis tick={AXIS} />
-          <ReferenceLine y={0} stroke={t.zero} />
-          <Tooltip
-            cursor={{ fill: t.cursor }}
-            content={({ active, payload, label }) =>
-              active && payload?.length
-                ? box(label, payload.map((p) => ({
-                    name: p.name === "fii" ? "FII" : p.name === "dii" ? "DII" : p.name,
-                    color: p.value >= 0
-                      ? (p.dataKey === "fii" ? "#16c784" : "#5b8cff")
-                      : (p.dataKey === "fii" ? "#ea3943" : "#f0a020"),
-                    value: `${p.value >= 0 ? "+" : ""}₹${Number(p.value).toLocaleString("en-IN")} Cr ${p.value >= 0 ? "(net buy)" : "(net sell)"}`,
-                  })))
-                : null
-            }
-          />
-          <Bar dataKey="fii" name="FII" radius={[2, 2, 0, 0]}>
-            {data.map((d, i) => <Cell key={i} fill={d.fii >= 0 ? "#16c784" : "#ea3943"} />)}
-          </Bar>
-          <Bar dataKey="dii" name="DII" radius={[2, 2, 0, 0]}>
-            {data.map((d, i) => <Cell key={i} fill={d.dii >= 0 ? "#5b8cff" : "#f0a020"} />)}
-          </Bar>
-        </BarChart>
+      {/* Header: cumulative totals + accumulation/distribution regime + view toggle */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <FlowStat label="FII net" value={totals.fii} color="#16c784" />
+          <FlowStat label="DII net" value={totals.dii} color="#5b8cff" />
+          <FlowStat label="Combined" value={totals.comb} color={t.fg} />
+          <span
+            className={`chip ${accumulating ? "chip-up" : "chip-down"} self-end mb-0.5`}
+            title="Direction of the regression trendline over this window"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${accumulating ? "bg-up" : "bg-down"}`} />
+            {accumulating ? "Accumulating" : "Distributing"}
+          </span>
+        </div>
+        <div className="inline-flex rounded-lg border border-line/70 bg-panel2/40 p-0.5 text-[11px] font-semibold">
+          {TABS.map(([k, lbl]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setView(k)}
+              aria-pressed={view === k}
+              className={`px-2.5 py-1 rounded-md transition-colors ${
+                view === k ? "bg-accent/20 text-accent" : "text-muted hover:text-white"
+              }`}
+            >
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <ResponsiveContainer width="100%" height={260}>
+        <ComposedChart data={rows} margin={{ top: 8, right: 6, left: -6, bottom: 0 }}>
+          <defs>
+            <linearGradient id="fdTrend" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="#a78bfa" stopOpacity={1} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="date" tick={AXIS} tickFormatter={(d) => d?.slice(5)} minTickGap={28} />
+          <YAxis yAxisId="bars" tick={AXIS} tickFormatter={crK} width={52} />
+          <YAxis yAxisId="cum" orientation="right" tick={AXIS} tickFormatter={crK} width={52} hide={!showTrend} />
+          <ReferenceLine yAxisId="bars" y={0} stroke={t.zero} />
+          <Tooltip cursor={{ fill: t.cursor }} content={TOOLTIP} />
+
+          {showBars && (
+            <Bar yAxisId="bars" dataKey="fii" name="FII" radius={[2, 2, 0, 0]} fillOpacity={barOpacity} isAnimationActive={false}>
+              {rows.map((d, i) => <Cell key={i} fill={d.fii >= 0 ? "#16c784" : "#ea3943"} />)}
+            </Bar>
+          )}
+          {showBars && (
+            <Bar yAxisId="bars" dataKey="dii" name="DII" radius={[2, 2, 0, 0]} fillOpacity={barOpacity} isAnimationActive={false}>
+              {rows.map((d, i) => <Cell key={i} fill={d.dii >= 0 ? "#5b8cff" : "#f0a020"} />)}
+            </Bar>
+          )}
+
+          {showTrend && (
+            <Line yAxisId="cum" type="monotone" dataKey="fii_cum" name="FII cum" stroke="#16c784"
+              strokeWidth={2.2} dot={false} isAnimationActive animationDuration={900} />
+          )}
+          {showTrend && (
+            <Line yAxisId="cum" type="monotone" dataKey="dii_cum" name="DII cum" stroke="#5b8cff"
+              strokeWidth={2.2} dot={false} isAnimationActive animationDuration={900} />
+          )}
+          {showTrend && (
+            <Line yAxisId="cum" type="linear" dataKey="trend" name="Trend" stroke="url(#fdTrend)"
+              strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />
+          )}
+          {showTrend && last.date != null && (
+            <ReferenceDot yAxisId="cum" x={last.date} y={last.fii_cum} r={4} fill="#16c784" stroke={t.ink} strokeWidth={1.5} ifOverflow="extendDomain" isFront />
+          )}
+          {showTrend && last.date != null && (
+            <ReferenceDot yAxisId="cum" x={last.date} y={last.dii_cum} r={4} fill="#5b8cff" stroke={t.ink} strokeWidth={1.5} ifOverflow="extendDomain" isFront />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
+
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
-        <span className="font-semibold text-white/80">FII</span>
-        <LegendSwatch color="#16c784" label="net buy" />
-        <LegendSwatch color="#ea3943" label="net sell" />
+        <span className="font-semibold text-white/80">Daily bars</span>
+        <LegendSwatch color="#16c784" label="FII buy" />
+        <LegendSwatch color="#ea3943" label="FII sell" />
+        <LegendSwatch color="#5b8cff" label="DII buy" />
+        <LegendSwatch color="#f0a020" label="DII sell" />
         <span className="mx-1 h-3 w-px bg-line" />
-        <span className="font-semibold text-white/80">DII</span>
-        <LegendSwatch color="#5b8cff" label="net buy" />
-        <LegendSwatch color="#f0a020" label="net sell" />
+        <span className="font-semibold text-white/80">Cumulative</span>
+        <LegendSwatch color="#16c784" label="FII" />
+        <LegendSwatch color="#5b8cff" label="DII" />
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-4 h-0.5 rounded-full" style={{ background: "#a78bfa" }} />
+          <span className="text-muted">regression trend</span>
+        </span>
       </div>
     </div>
   );
