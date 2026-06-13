@@ -73,14 +73,18 @@ export default function SectorRotationPanel({ sectors }) {
         </div>
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {shown.map((s, i) => {
           const pos = s.avg_pct >= 0;
           const w = Math.min(100, (Math.abs(s.avg_pct) / maxAbs) * 100);
           const divider = i === firstLagIdx && laggards.length > 0;
           const isTop = i === 0 && pos; // #1 leader gets a soft glow
+          // Single compact line: a left-anchored magnitude bar sits *behind* the
+          // row (green for leaders, red for laggards), the full sector name reads
+          // on top, and the % sits at the right — so names never truncate but each
+          // row stays one line tall.
           return (
-            <div key={s.sector} className="pt-0.5">
+            <div key={s.sector}>
               {divider && (
                 <div className="flex items-center gap-2 my-1.5">
                   <span className="h-px flex-1 bg-line/70" />
@@ -88,33 +92,24 @@ export default function SectorRotationPanel({ sectors }) {
                   <span className="h-px flex-1 bg-line/70" />
                 </div>
               )}
-              {/* Name + % on their own line so long sector names show in full,
-                  then the diverging bar full-width beneath. */}
-              <div className="flex items-center justify-between gap-2"
+              <div className="relative flex items-center justify-between gap-2 overflow-hidden rounded px-2 py-1"
                 title={`${s.sector} · ${s.count} stocks · ${s.advances}↑/${s.declines}↓ · delivery ${s.avg_deliv ?? "—"}%`}>
-                <div className="min-w-0 flex items-center gap-1 text-xs text-white/85">
+                <span aria-hidden className="absolute inset-y-0 left-0 rounded"
+                  style={{
+                    width: `${w}%`,
+                    background: pos
+                      ? "linear-gradient(to right, rgb(var(--up) / 0.32), rgb(var(--up) / 0.08))"
+                      : "linear-gradient(to right, rgb(var(--down) / 0.32), rgb(var(--down) / 0.08))",
+                    boxShadow: isTop ? "0 0 10px rgb(var(--up) / 0.4)" : undefined,
+                  }} />
+                <div className="relative min-w-0 flex items-center gap-1 text-xs text-white/90">
                   {pos && s.avg_deliv != null && s.avg_deliv >= 55 && (
                     <span className="text-up text-[8px] leading-none shrink-0" aria-hidden>◆</span>
                   )}
-                  <span>{s.sector}</span>
+                  <span className="truncate">{s.sector}</span>
                 </div>
-                <div className="shrink-0 text-xs font-semibold tabular-nums">
+                <div className="relative shrink-0 text-xs font-semibold tabular-nums">
                   <Pct value={s.avg_pct} />
-                </div>
-              </div>
-              <div className="mt-1 flex items-center">
-                <div className="w-1/2 flex justify-end">
-                  {!pos && (
-                    <span className="h-2 rounded-l bg-gradient-to-l from-down to-down/40"
-                      style={{ width: `${w}%` }} />
-                  )}
-                </div>
-                <span className="w-px h-3 bg-line shrink-0" />
-                <div className="w-1/2 flex justify-start">
-                  {pos && (
-                    <span className="h-2 rounded-r bg-gradient-to-r from-up/40 to-up"
-                      style={{ width: `${w}%`, boxShadow: isTop ? "0 0 8px rgb(var(--up) / 0.55)" : undefined }} />
-                  )}
                 </div>
               </div>
             </div>
@@ -123,7 +118,7 @@ export default function SectorRotationPanel({ sectors }) {
       </div>
 
       <p className="text-[10px] text-muted/80 leading-snug">
-        Turnover-weighted average move per sector — leaders push right, laggards left.
+        Turnover-weighted average move per sector — longer bar means a bigger move.
         {hasConviction && <> <span className="text-up">◆</span> marks ≥55% delivery (conviction buying).</>}
       </p>
     </div>
