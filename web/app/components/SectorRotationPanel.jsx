@@ -80,7 +80,7 @@ export default function SectorRotationPanel({ sectors }) {
           const divider = i === firstLagIdx && laggards.length > 0;
           const isTop = i === 0 && pos; // #1 leader gets a soft glow
           return (
-            <div key={s.sector}>
+            <div key={s.sector} className="pt-0.5">
               {divider && (
                 <div className="flex items-center gap-2 my-1.5">
                   <span className="h-px flex-1 bg-line/70" />
@@ -88,31 +88,33 @@ export default function SectorRotationPanel({ sectors }) {
                   <span className="h-px flex-1 bg-line/70" />
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <div className="w-20 shrink-0 truncate text-xs text-white/85 flex items-center gap-1"
-                  title={`${s.sector} · ${s.count} stocks · ${s.advances}↑/${s.declines}↓ · delivery ${s.avg_deliv ?? "—"}%`}>
+              {/* Name + % on their own line so long sector names show in full,
+                  then the diverging bar full-width beneath. */}
+              <div className="flex items-center justify-between gap-2"
+                title={`${s.sector} · ${s.count} stocks · ${s.advances}↑/${s.declines}↓ · delivery ${s.avg_deliv ?? "—"}%`}>
+                <div className="min-w-0 flex items-center gap-1 text-xs text-white/85">
                   {pos && s.avg_deliv != null && s.avg_deliv >= 55 && (
                     <span className="text-up text-[8px] leading-none shrink-0" aria-hidden>◆</span>
                   )}
-                  <span className="truncate">{s.sector}</span>
+                  <span>{s.sector}</span>
                 </div>
-                <div className="flex-1 flex items-center">
-                  <div className="w-1/2 flex justify-end">
-                    {!pos && (
-                      <span className="h-2.5 rounded-l bg-gradient-to-l from-down to-down/40"
-                        style={{ width: `${w}%` }} />
-                    )}
-                  </div>
-                  <span className="w-px h-3.5 bg-line shrink-0" />
-                  <div className="w-1/2 flex justify-start">
-                    {pos && (
-                      <span className="h-2.5 rounded-r bg-gradient-to-r from-up/40 to-up"
-                        style={{ width: `${w}%`, boxShadow: isTop ? "0 0 8px rgb(var(--up) / 0.55)" : undefined }} />
-                    )}
-                  </div>
-                </div>
-                <div className="w-12 shrink-0 text-right text-xs font-semibold tabular-nums">
+                <div className="shrink-0 text-xs font-semibold tabular-nums">
                   <Pct value={s.avg_pct} />
+                </div>
+              </div>
+              <div className="mt-1 flex items-center">
+                <div className="w-1/2 flex justify-end">
+                  {!pos && (
+                    <span className="h-2 rounded-l bg-gradient-to-l from-down to-down/40"
+                      style={{ width: `${w}%` }} />
+                  )}
+                </div>
+                <span className="w-px h-3 bg-line shrink-0" />
+                <div className="w-1/2 flex justify-start">
+                  {pos && (
+                    <span className="h-2 rounded-r bg-gradient-to-r from-up/40 to-up"
+                      style={{ width: `${w}%`, boxShadow: isTop ? "0 0 8px rgb(var(--up) / 0.55)" : undefined }} />
+                  )}
                 </div>
               </div>
             </div>
