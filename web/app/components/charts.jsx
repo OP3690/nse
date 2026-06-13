@@ -98,6 +98,31 @@ function RailStat({ label, value, color }) {
   );
 }
 
+// Current consecutive run of net-buy or net-sell sessions for one side, scanning
+// back from the latest row — a quick read on how persistent the flow has been.
+function lastStreak(rows, key) {
+  let n = 0, dir = null;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const d = (rows[i][key] || 0) >= 0 ? "buy" : "sell";
+    if (dir === null) { dir = d; n = 1; }
+    else if (d === dir) n += 1;
+    else break;
+  }
+  return { dir, n };
+}
+
+function StreakChip({ label, s }) {
+  if (!s.n) return null;
+  const buy = s.dir === "buy";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold ${buy ? "bg-up/12 text-up" : "bg-down/12 text-down"}`}
+      title={`${label} on a ${s.n}-session ${buy ? "buying" : "selling"} streak`}>
+      <span className="text-white/70">{label}</span>
+      <span className="tabular-nums">{buy ? "▲" : "▼"} {s.n}d {buy ? "buy" : "sell"}</span>
+    </span>
+  );
+}
+
 export function FiiDiiChart({ data }) {
   const t = useChartTheme();
   const [view, setView] = useState("both"); // both | bars | trend
@@ -130,6 +155,8 @@ export function FiiDiiChart({ data }) {
   const showTrend = view === "both" || view === "trend";
   const barOpacity = view === "both" ? 0.5 : 0.92;
   const accumulating = slope >= 0;
+  const fiiStreak = lastStreak(rows, "fii");
+  const diiStreak = lastStreak(rows, "dii");
 
   const TOOLTIP = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -172,6 +199,12 @@ export function FiiDiiChart({ data }) {
           </div>
         </div>
 
+        {/* persistence: current buy/sell streak per side */}
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+          <StreakChip label="FII" s={fiiStreak} />
+          <StreakChip label="DII" s={diiStreak} />
+        </div>
+
         {/* view toggle */}
         <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-line/70 bg-panel2/40 p-0.5 text-[11px] font-semibold">
           {TABS.map(([k, lbl]) => (
@@ -199,6 +232,14 @@ export function FiiDiiChart({ data }) {
               <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.5} />
               <stop offset="100%" stopColor="#a78bfa" stopOpacity={1} />
             </linearGradient>
+            <linearGradient id="fdFiiCum" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#16c784" stopOpacity={0.28} />
+              <stop offset="100%" stopColor="#16c784" stopOpacity={0.02} />
+            </linearGradient>
+            <linearGradient id="fdDiiCum" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#5b8cff" stopOpacity={0.28} />
+              <stop offset="100%" stopColor="#5b8cff" stopOpacity={0.02} />
+            </linearGradient>
           </defs>
           <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="date" tick={AXIS} tickFormatter={(d) => d?.slice(5)} minTickGap={28} />
@@ -219,12 +260,12 @@ export function FiiDiiChart({ data }) {
           )}
 
           {showTrend && (
-            <Line yAxisId="cum" type="monotone" dataKey="fii_cum" name="FII cum" stroke="#16c784"
-              strokeWidth={2.2} dot={false} isAnimationActive animationDuration={900} />
+            <Area yAxisId="cum" type="monotone" dataKey="fii_cum" name="FII cum" stroke="#16c784"
+              strokeWidth={2.2} fill="url(#fdFiiCum)" dot={false} isAnimationActive animationDuration={900} />
           )}
           {showTrend && (
-            <Line yAxisId="cum" type="monotone" dataKey="dii_cum" name="DII cum" stroke="#5b8cff"
-              strokeWidth={2.2} dot={false} isAnimationActive animationDuration={900} />
+            <Area yAxisId="cum" type="monotone" dataKey="dii_cum" name="DII cum" stroke="#5b8cff"
+              strokeWidth={2.2} fill="url(#fdDiiCum)" dot={false} isAnimationActive animationDuration={900} />
           )}
           {showTrend && (
             <Line yAxisId="cum" type="linear" dataKey="trend" name="Trend" stroke="url(#fdTrend)"

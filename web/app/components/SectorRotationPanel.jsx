@@ -22,6 +22,7 @@ export default function SectorRotationPanel({ sectors }) {
   const shown = [...leaders, ...laggards];
   const maxAbs = Math.max(1, ...shown.map((s) => Math.abs(s.avg_pct)));
   const firstLagIdx = leaders.length;
+  const hasConviction = shown.some((s) => s.avg_pct >= 0 && s.avg_deliv != null && s.avg_deliv >= 55);
 
   return (
     <div className="space-y-3">
@@ -50,8 +51,12 @@ export default function SectorRotationPanel({ sectors }) {
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <div className="w-20 shrink-0 truncate text-xs text-white/85" title={`${s.sector} · ${s.count} stocks · ${s.advances}↑/${s.declines}↓`}>
-                  {s.sector}
+                <div className="w-20 shrink-0 truncate text-xs text-white/85 flex items-center gap-1"
+                  title={`${s.sector} · ${s.count} stocks · ${s.advances}↑/${s.declines}↓ · delivery ${s.avg_deliv ?? "—"}%`}>
+                  {pos && s.avg_deliv != null && s.avg_deliv >= 55 && (
+                    <span className="text-up text-[8px] leading-none shrink-0" aria-hidden>◆</span>
+                  )}
+                  <span className="truncate">{s.sector}</span>
                 </div>
                 <div className="flex-1 flex items-center">
                   <div className="w-1/2 flex justify-end">
@@ -79,6 +84,7 @@ export default function SectorRotationPanel({ sectors }) {
 
       <p className="text-[10px] text-muted/80 leading-snug">
         Turnover-weighted average move per sector — leaders push right, laggards left.
+        {hasConviction && <> <span className="text-up">◆</span> marks ≥55% delivery (conviction buying).</>}
       </p>
     </div>
   );
