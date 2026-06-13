@@ -1,6 +1,7 @@
 import { getLatest, fmtCr } from "./lib/data";
 import { Pct, SignalBadge, OiBadge, Stat, BreadthStat, Section, Score, SymbolLink, PageHeader } from "./components/ui";
 import { FiiDiiChart, SectorPerformanceChart } from "./components/charts";
+import SectorRotationPanel from "./components/SectorRotationPanel";
 import MoneyFlow from "./components/MoneyFlow";
 import MoversBoard from "./components/MoversBoard";
 import MarketBrief from "./components/MarketBrief";
@@ -252,18 +253,7 @@ export default async function Dashboard() {
 
         {/* sector rotation */}
         <Section title="Sector Rotation" href="/sectors" info="dash.sector_rotation">
-          <div className="space-y-2">
-            {sectors.slice(0, 8).map((s) => (
-              <div key={s.sector} className="flex items-center gap-2">
-                <div className="w-28 truncate text-xs" title={s.sector}>{s.sector}</div>
-                <div className="flex-1 h-2 rounded bg-line overflow-hidden">
-                  <div className={s.avg_pct >= 0 ? "bg-up h-full" : "bg-down h-full"}
-                    style={{ width: `${Math.min(100, Math.abs(s.avg_pct) * 12 + 4)}%` }} />
-                </div>
-                <div className="w-14 text-right text-xs"><Pct value={s.avg_pct} /></div>
-              </div>
-            ))}
-          </div>
+          <SectorRotationPanel sectors={sectors} />
         </Section>
       </div>
 

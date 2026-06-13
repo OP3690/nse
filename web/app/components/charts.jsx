@@ -83,15 +83,17 @@ function crK(v) {
 }
 const crFull = (v) => `${v >= 0 ? "+" : ""}₹${Number(v).toLocaleString("en-IN")} Cr`;
 
-// One cumulative-flow figure in the header: label, signed ₹ value, up/down arrow.
-function FlowStat({ label, value, color }) {
+// One cumulative-flow figure in the scoreboard rail: a bordered mini-card with a
+// colored left accent, the signed ₹ total and an up/down arrow.
+function RailStat({ label, value, color }) {
   const up = value >= 0;
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wider text-muted font-semibold">{label}</span>
-      <span className="font-mono text-base font-bold tabular-nums leading-none" style={{ color }}>
-        <span className="mr-0.5 text-xs">{up ? "▲" : "▼"}</span>{crFull(value)}
-      </span>
+    <div className="relative flex-1 min-w-0 rounded-lg border border-line bg-panel2/40 pl-3 pr-2.5 py-2 overflow-hidden">
+      <span className="absolute left-0 inset-y-0 w-1" style={{ background: color }} />
+      <div className="text-[10px] uppercase tracking-wider text-muted font-semibold">{label}</div>
+      <div className="font-mono text-[15px] font-bold tabular-nums leading-tight truncate" style={{ color }}>
+        <span className="mr-0.5 text-[10px]">{up ? "▲" : "▼"}</span>{crFull(value)}
+      </div>
     </div>
   );
 }
@@ -145,29 +147,40 @@ export function FiiDiiChart({ data }) {
   const TABS = [["both", "Both"], ["bars", "Daily"], ["trend", "Trend"]];
 
   return (
-    <div>
-      {/* Header: cumulative totals + accumulation/distribution regime + view toggle */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <FlowStat label="FII net" value={totals.fii} color="#16c784" />
-          <FlowStat label="DII net" value={totals.dii} color="#5b8cff" />
-          <FlowStat label="Combined" value={totals.comb} color={t.fg} />
-          <span
-            className={`chip ${accumulating ? "chip-up" : "chip-down"} self-end mb-0.5`}
-            title="Direction of the regression trendline over this window"
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${accumulating ? "bg-up" : "bg-down"}`} />
-            {accumulating ? "Accumulating" : "Distributing"}
-          </span>
+    <div className="grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-5">
+      {/* Left rail: cumulative scoreboard + regime banner + view toggle */}
+      <div className="flex flex-col gap-2.5">
+        <div className="text-[10px] uppercase tracking-wider text-muted font-semibold">
+          Cumulative · {rows.length} sessions
         </div>
-        <div className="inline-flex rounded-lg border border-line/70 bg-panel2/40 p-0.5 text-[11px] font-semibold">
+        <div className="flex gap-2.5 lg:flex-col">
+          <RailStat label="FII net" value={totals.fii} color="#16c784" />
+          <RailStat label="DII net" value={totals.dii} color="#5b8cff" />
+          <RailStat label="Combined" value={totals.comb} color="#a78bfa" />
+        </div>
+
+        {/* accumulation / distribution regime, read from the regression slope */}
+        <div className={`rounded-lg border px-3 py-2 ${accumulating ? "border-up/30 bg-up/5" : "border-down/30 bg-down/5"}`}>
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${accumulating ? "bg-up" : "bg-down"} animate-pulse`} />
+            <span className={`text-xs font-bold ${accumulating ? "text-up" : "text-down"}`}>
+              {accumulating ? "Accumulating" : "Distributing"}
+            </span>
+          </div>
+          <div className="text-[10px] text-muted mt-0.5">
+            trend ≈ <span className="font-mono text-white/80">{crK(Math.round(slope))}</span>/session
+          </div>
+        </div>
+
+        {/* view toggle */}
+        <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-line/70 bg-panel2/40 p-0.5 text-[11px] font-semibold">
           {TABS.map(([k, lbl]) => (
             <button
               key={k}
               type="button"
               onClick={() => setView(k)}
               aria-pressed={view === k}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
+              className={`px-2 py-1 rounded-md transition-colors ${
                 view === k ? "bg-accent/20 text-accent" : "text-muted hover:text-white"
               }`}
             >
@@ -177,7 +190,9 @@ export function FiiDiiChart({ data }) {
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={260}>
+      {/* Chart + legend */}
+      <div className="min-w-0">
+      <ResponsiveContainer width="100%" height={300}>
         <ComposedChart data={rows} margin={{ top: 8, right: 6, left: -6, bottom: 0 }}>
           <defs>
             <linearGradient id="fdTrend" x1="0" y1="0" x2="1" y2="0">
@@ -238,6 +253,7 @@ export function FiiDiiChart({ data }) {
           <span className="w-4 h-0.5 rounded-full" style={{ background: "#a78bfa" }} />
           <span className="text-muted">regression trend</span>
         </span>
+      </div>
       </div>
     </div>
   );
