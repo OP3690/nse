@@ -24,7 +24,10 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 min covers a normal incremental run; a deep `backfill` seed (rebuilding
+    # months of price history, e.g. after a cache eviction) fetches hundreds of
+    # bhavcopies, so allow more headroom for those on-demand runs.
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
