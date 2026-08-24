@@ -7,6 +7,31 @@ import MoversBoard from "./components/MoversBoard";
 import MarketBrief from "./components/MarketBrief";
 import EarningsRadar from "./components/EarningsRadar";
 import IndexTicker from "./components/IndexTicker";
+import SmartMoneyBoard from "./components/SmartMoneyBoard";
+
+// Trim the scored universe to the fields the dashboard board renders, keep only
+// names smart money is meaningfully in (score >= 50), and pre-sort by score so
+// the client filter starts from a lean, ordered slice instead of ~1,000 rows.
+const SM_FLOOR = 50;
+const SM_FIELDS = ["symbol", "company", "sector", "score", "signal", "oi_label",
+  "deliv_pct", "vol_surge", "pct_change", "close", "inst_net_cr", "cap_tier"];
+function smartMoneySlice(screener) {
+  if (!Array.isArray(screener)) return { rows: [], breadth: null };
+  const scored = screener.filter((s) => s.score != null);
+  const rows = scored
+    .filter((s) => s.score >= SM_FLOOR)
+    .sort((a, b) => b.score - a.score)
+    .map((s) => Object.fromEntries(SM_FIELDS.map((k) => [k, s[k] ?? null])));
+  const elite = scored.filter((s) => s.score >= 80).length;
+  const strong = scored.filter((s) => s.score >= 60 && s.score < 80).length;
+  const building = scored.filter((s) => s.score >= 50 && s.score < 60).length;
+  // Coach-style read of how *broad* today's accumulation is.
+  const read =
+    elite >= 25 ? `Broad-based accumulation — ${elite} names carry an elite ≥80 score, so smart money is spread across the market, not one or two stocks.`
+    : elite >= 8 ? `Selective accumulation — ${elite} elite (≥80) names; smart money is working a focused set rather than the whole tape.`
+    : `Narrow accumulation — only ${elite} name${elite === 1 ? "" : "s"} clear an elite ≥80 score, so conviction is concentrated in a handful of stocks today.`;
+  return { rows, breadth: { scored: scored.length, elite, strong, building, read } };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -192,6 +217,7 @@ export default async function Dashboard() {
 
   const analytics = flowAnalytics(fiidii?.history || []);
   const brief = buildBrief({ fii, dii, m, advPct, sectors, top_accumulation, analytics });
+  const smartMoney = smartMoneySlice(d.screener);
 
   return (
     <div className="space-y-6">
@@ -276,35 +302,41 @@ export default async function Dashboard() {
       {/* money in / money out */}
       {d.money_flow && <MoneyFlow data={d.money_flow} />}
 
-      {/* top accumulation */}
-      <Section title="Top Smart-Money Accumulation" href="/screener" action="Open screener →" info="accumulation">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr>
-                <th className="th">Symbol</th><th className="th">Sector</th>
-                <th className="th text-right">Price</th><th className="th text-right">Chg</th>
-                <th className="th text-right">Deliv %</th><th className="th text-right">Vol Surge</th>
-                <th className="th">OI</th><th className="th">Signal</th><th className="th">Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {top_accumulation.slice(0, 15).map((e) => (
-                <tr key={e.symbol} className="hover:bg-panel2/50">
-                  <td className="td"><SymbolLink symbol={e.symbol} name={e.company} /></td>
-                  <td className="td text-muted text-xs max-w-[140px] truncate">{e.sector || "—"}</td>
-                  <td className="td text-right font-mono">{e.close?.toLocaleString("en-IN")}</td>
-                  <td className="td text-right"><Pct value={e.pct_change} /></td>
-                  <td className="td text-right font-mono">{e.deliv_pct != null ? `${e.deliv_pct.toFixed(0)}%` : "—"}</td>
-                  <td className="td text-right font-mono">{e.vol_surge ? `${e.vol_surge.toFixed(1)}×` : "—"}</td>
-                  <td className="td"><OiBadge label={e.oi_label} /></td>
-                  <td className="td"><SignalBadge signal={e.signal} /></td>
-                  <td className="td"><Score value={e.score} /></td>
+      {/* smart-money leaderboard — filter the scored universe by min score, sector,
+          F&O signal or symbol; opens with a market-wide accumulation-breadth read */}
+      <Section title="Smart-Money Accumulation" href="/screener" action="Open screener →" info="accumulation"
+        desc="Every liquid name scored on delivery strength, volume surge, institutional flow & OI — filter by minimum smart-money score to isolate genuine accumulation.">
+        {smartMoney.rows.length > 0 ? (
+          <SmartMoneyBoard rows={smartMoney.rows} breadth={smartMoney.breadth} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr>
+                  <th className="th">Symbol</th><th className="th">Sector</th>
+                  <th className="th text-right">Price</th><th className="th text-right">Chg</th>
+                  <th className="th text-right">Deliv %</th><th className="th text-right">Vol Surge</th>
+                  <th className="th">OI</th><th className="th">Signal</th><th className="th">Score</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {top_accumulation.slice(0, 15).map((e) => (
+                  <tr key={e.symbol} className="hover:bg-panel2/50">
+                    <td className="td"><SymbolLink symbol={e.symbol} name={e.company} /></td>
+                    <td className="td text-muted text-xs max-w-[140px] truncate">{e.sector || "—"}</td>
+                    <td className="td text-right font-mono">{e.close?.toLocaleString("en-IN")}</td>
+                    <td className="td text-right"><Pct value={e.pct_change} /></td>
+                    <td className="td text-right font-mono">{e.deliv_pct != null ? `${e.deliv_pct.toFixed(0)}%` : "—"}</td>
+                    <td className="td text-right font-mono">{e.vol_surge ? `${e.vol_surge.toFixed(1)}×` : "—"}</td>
+                    <td className="td"><OiBadge label={e.oi_label} /></td>
+                    <td className="td"><SignalBadge signal={e.signal} /></td>
+                    <td className="td"><Score value={e.score} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Section>
 
       {/* OI buildup */}
