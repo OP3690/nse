@@ -367,6 +367,88 @@ function Wk52({ w }) {
   );
 }
 
+// ---- Large-Deal Flow by Stock ----
+// Roll the raw bulk/block rows up per symbol into a buy-vs-sell value split, so
+// you can see at a glance which names saw large money *accumulating* (buy-heavy),
+// *distributing* (sell-heavy), or just an ownership *crossing* (≈50/50 block).
+function LargeDealFlow({ rows }) {
+  const { stocks, tot } = useMemo(() => {
+    const m = new Map();
+    let buyAll = 0, sellAll = 0;
+    for (const r of rows || []) {
+      const v = Number(r.value_cr) || 0;
+      const key = r.symbol;
+      if (!m.has(key)) m.set(key, { symbol: r.symbol, company: r.company, buy: 0, sell: 0, deals: 0 });
+      const s = m.get(key);
+      s.deals += 1;
+      if (r.side === "BUY") { s.buy += v; buyAll += v; }
+      else { s.sell += v; sellAll += v; }
+    }
+    const stocks = [...m.values()]
+      .map((s) => {
+        const total = s.buy + s.sell;
+        return { ...s, total, buyPct: total ? (s.buy / total) * 100 : 0, net: s.buy - s.sell };
+      })
+      .sort((a, b) => b.total - a.total);
+    return { stocks, tot: { buy: buyAll, sell: sellAll, total: buyAll + sellAll } };
+  }, [rows]);
+
+  if (!stocks.length) return null;
+
+  const overallBuyPct = tot.total ? (tot.buy / tot.total) * 100 : 0;
+  const tilt = (p) => (p >= 60 ? { label: "Accumulated", cls: "chip-up" } : p <= 40 ? { label: "Distributed", cls: "chip-down" } : { label: "Crossed", cls: "chip-muted" });
+
+  return (
+    <Panel title="Large-Deal Flow by Stock" info="pulse.deals"
+      desc="Disclosed bulk & block value per stock, split into buy vs sell — who was accumulating, distributing, or just crossing a block."
+      count={stocks.length}>
+      {/* session-wide buy/sell split */}
+      <div className="mb-4 rounded-xl border border-line bg-panel2/40 p-3">
+        <div className="flex items-center justify-between text-[11px] font-semibold mb-1.5">
+          <span className="text-up">Buy {fmtCr(tot.buy)} · {overallBuyPct.toFixed(0)}%</span>
+          <span className="text-muted">All large deals · {fmtCr(tot.total)}</span>
+          <span className="text-down">{(100 - overallBuyPct).toFixed(0)}% · {fmtCr(tot.sell)} Sell</span>
+        </div>
+        <div className="flex h-2.5 overflow-hidden rounded-full bg-down/25">
+          <span className="bg-up/80" style={{ width: `${overallBuyPct}%` }} />
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        {stocks.map((s) => {
+          const t = tilt(s.buyPct);
+          return (
+            <div key={s.symbol} className="flex items-center gap-3">
+              <div className="w-28 sm:w-36 shrink-0 min-w-0">
+                <Sym s={s.symbol} name={s.company} />
+                <div className="text-[10px] text-muted truncate">{s.deals} deal{s.deals > 1 ? "s" : ""} · {fmtCr(s.total)}</div>
+              </div>
+              {/* buy / sell split bar */}
+              <div className="flex-1 min-w-0">
+                <div className="flex h-3 overflow-hidden rounded bg-down/20"
+                  title={`Buy ${fmtCr(s.buy)} (${s.buyPct.toFixed(0)}%) · Sell ${fmtCr(s.sell)} (${(100 - s.buyPct).toFixed(0)}%)`}>
+                  {s.buy > 0 && <span className="bg-gradient-to-r from-up/70 to-up" style={{ width: `${s.buyPct}%` }} />}
+                  {s.sell > 0 && <span className="bg-gradient-to-l from-down/70 to-down" style={{ width: `${100 - s.buyPct}%` }} />}
+                </div>
+                <div className="mt-1 flex items-center justify-between text-[10px] font-semibold tabular-nums">
+                  <span className="text-up">{s.buyPct.toFixed(0)}% buy</span>
+                  <span className="text-down">{(100 - s.buyPct).toFixed(0)}% sell</span>
+                </div>
+              </div>
+              <span className={`chip ${t.cls} shrink-0 hidden sm:inline-flex`}>{t.label}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-3 text-[10px] text-muted/80 leading-snug">
+        Block deals are usually crossed (a matched buyer &amp; seller ≈ 50/50 — an ownership change, not directional demand).
+        A lopsided split points to genuine one-sided bulk buying or selling.
+      </p>
+    </Panel>
+  );
+}
+
 // ---- Large Deals ----
 function LargeDeals({ rows }) {
   return (
@@ -410,6 +492,7 @@ export default function PulseView({ pulse }) {
         <Wk52 w={p.wk52} />
       </div>
       <VolumeGainers rows={p.volume_gainers} />
+      <LargeDealFlow rows={p.large_deals} />
       <LargeDeals rows={p.large_deals} />
     </div>
   );
