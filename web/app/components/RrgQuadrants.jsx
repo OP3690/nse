@@ -2,18 +2,31 @@
 // momentum of that strength (y), both indexed to the market at 100. The four
 // quadrants read as a rotation clock (Improving → Leading → Weakening → Lagging),
 // so you can see which sectors money is rotating into and out of at a glance.
+// Each dot is labelled with a short code; the side legend maps code → sector.
 const Q = {
-  Leading: { color: "rgb(var(--up))", cls: "text-up", corner: "top-right" },
-  Improving: { color: "rgb(var(--accent))", cls: "text-accent", corner: "top-left" },
-  Weakening: { color: "#f59e0b", cls: "text-amber-500", corner: "bottom-right" },
-  Lagging: { color: "rgb(var(--down))", cls: "text-down", corner: "bottom-left" },
+  Leading: { color: "rgb(var(--up))", cls: "text-up" },
+  Improving: { color: "rgb(var(--accent))", cls: "text-accent" },
+  Weakening: { color: "#f59e0b", cls: "text-amber-500" },
+  Lagging: { color: "rgb(var(--down))", cls: "text-down" },
 };
+
+// Compact, readable codes for the NSE sector names.
+const ABBR = {
+  "Financial Services": "FIN", "Information Technology": "IT", "Oil Gas & Consumable Fuels": "O&G",
+  "Automobile and Auto Components": "AUTO", "Capital Goods": "CAPGD", "Healthcare": "HLTH",
+  "Fast Moving Consumer Goods": "FMCG", "Metals & Mining": "METAL", "Consumer Services": "CONSVC",
+  "Telecommunication": "TELCM", "Power": "POWER", "Consumer Durables": "CDUR", "Realty": "RLTY",
+  "Construction": "CONST", "Chemicals": "CHEM", "Services": "SVCS", "Consumer Discretionary": "CDISC",
+  "Industrials": "INDL", "Commodities": "COMDT", "Construction Materials": "CMATL", "Utilities": "UTIL",
+  "Textiles": "TXTL", "Energy": "ENRGY",
+};
+const code = (s) => ABBR[s] || s.replace(/[^A-Za-z ]/g, "").split(/\s+/).map((w) => w[0]).join("").slice(0, 5).toUpperCase();
 
 export default function RrgQuadrants({ rot }) {
   const pts = rot?.points;
   if (!pts?.length) return null;
 
-  const W = 340, H = 300, PAD = 30;
+  const W = 360, H = 320, PAD = 34;
   // Symmetric domain around 100 so the crosshair sits dead-centre.
   const rSpan = Math.max(6, ...pts.map((p) => Math.abs((p.rs_ratio ?? 100) - 100))) + 3;
   const mSpan = Math.max(6, ...pts.map((p) => Math.abs((p.rs_momentum ?? 100) - 100))) + 3;
@@ -26,44 +39,56 @@ export default function RrgQuadrants({ rot }) {
   const order = ["Leading", "Improving", "Weakening", "Lagging"];
 
   return (
-    <div className="grid lg:grid-cols-[minmax(0,340px)_1fr] gap-5 items-start">
+    <div className="grid lg:grid-cols-[minmax(0,360px)_1fr] gap-6 items-start">
       <div className="mx-auto">
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W }} className="overflow-visible">
           {/* quadrant fills */}
-          <rect x={cx0} y={PAD} width={W - PAD - cx0} height={cy0 - PAD} fill="rgb(var(--up))" opacity="0.05" />
-          <rect x={PAD} y={PAD} width={cx0 - PAD} height={cy0 - PAD} fill="rgb(var(--accent))" opacity="0.05" />
-          <rect x={cx0} y={cy0} width={W - PAD - cx0} height={H - PAD - cy0} fill="#f59e0b" opacity="0.05" />
-          <rect x={PAD} y={cy0} width={cx0 - PAD} height={H - PAD - cy0} fill="rgb(var(--down))" opacity="0.05" />
+          <rect x={cx0} y={PAD} width={W - PAD - cx0} height={cy0 - PAD} fill="rgb(var(--up))" opacity="0.06" />
+          <rect x={PAD} y={PAD} width={cx0 - PAD} height={cy0 - PAD} fill="rgb(var(--accent))" opacity="0.06" />
+          <rect x={cx0} y={cy0} width={W - PAD - cx0} height={H - PAD - cy0} fill="#f59e0b" opacity="0.06" />
+          <rect x={PAD} y={cy0} width={cx0 - PAD} height={H - PAD - cy0} fill="rgb(var(--down))" opacity="0.06" />
           {/* crosshair */}
           <line x1={cx0} y1={PAD} x2={cx0} y2={H - PAD} stroke="rgb(var(--line))" strokeWidth="1" />
           <line x1={PAD} y1={cy0} x2={W - PAD} y2={cy0} stroke="rgb(var(--line))" strokeWidth="1" />
-          {/* corner labels */}
-          <text x={W - PAD} y={PAD - 8} textAnchor="end" className="fill-up" fontSize="10" fontWeight="700" opacity="0.9">LEADING</text>
-          <text x={PAD} y={PAD - 8} textAnchor="start" className="fill-accent" fontSize="10" fontWeight="700" opacity="0.9">IMPROVING</text>
-          <text x={W - PAD} y={H - PAD + 16} textAnchor="end" fill="#f59e0b" fontSize="10" fontWeight="700" opacity="0.9">WEAKENING</text>
-          <text x={PAD} y={H - PAD + 16} textAnchor="start" className="fill-down" fontSize="10" fontWeight="700" opacity="0.9">LAGGING</text>
-          {/* tails + dots */}
+          {/* corner quadrant labels */}
+          <text x={W - PAD} y={PAD - 9} textAnchor="end" className="fill-up" fontSize="10" fontWeight="700" opacity="0.9">LEADING</text>
+          <text x={PAD} y={PAD - 9} textAnchor="start" className="fill-accent" fontSize="10" fontWeight="700" opacity="0.9">IMPROVING</text>
+          <text x={W - PAD} y={H - PAD + 17} textAnchor="end" fill="#f59e0b" fontSize="10" fontWeight="700" opacity="0.9">WEAKENING</text>
+          <text x={PAD} y={H - PAD + 17} textAnchor="start" className="fill-down" fontSize="10" fontWeight="700" opacity="0.9">LAGGING</text>
+          {/* axis captions */}
+          <text x={W - PAD + 2} y={cy0 - 5} textAnchor="end" fill="rgb(var(--muted))" fontSize="8" opacity="0.8">Rel. strength →</text>
+          <text x={cx0 + 5} y={PAD - 1} textAnchor="start" fill="rgb(var(--muted))" fontSize="8" opacity="0.8">↑ Momentum</text>
+          {/* tails */}
+          {pts.map((p) => {
+            const tail = rot.tails?.[p.sector];
+            if (!Array.isArray(tail) || tail.length < 2) return null;
+            const c = Q[p.quadrant]?.color || "rgb(var(--muted))";
+            return <polyline key={`t-${p.sector}`} points={tail.map((t) => `${sx(t.ratio)},${sy(t.mom)}`).join(" ")}
+              fill="none" stroke={c} strokeWidth="1" opacity="0.28" />;
+          })}
+          {/* dots + labels */}
           {pts.map((p) => {
             const c = Q[p.quadrant]?.color || "rgb(var(--muted))";
             const x = sx(p.rs_ratio), y = sy(p.rs_momentum);
-            const tail = rot.tails?.[p.sector];
             const r = 3 + Math.sqrt((p.share || 0) / maxShare) * 5;
+            const left = x > W - 66; // near right edge → label to the left
             return (
               <g key={p.sector}>
-                {Array.isArray(tail) && tail.length > 1 && (
-                  <polyline points={tail.map((t) => `${sx(t.ratio)},${sy(t.mom)}`).join(" ")}
-                    fill="none" stroke={c} strokeWidth="1" opacity="0.35" />
-                )}
-                <circle cx={x} cy={y} r={r} fill={c} fillOpacity="0.85" stroke="rgb(var(--ink))" strokeWidth="0.8">
+                <circle cx={x} cy={y} r={r} fill={c} fillOpacity="0.9" stroke="rgb(var(--ink))" strokeWidth="0.8">
                   <title>{`${p.sector} — ${p.quadrant}\nRS-Ratio ${p.rs_ratio?.toFixed(1)} · RS-Momentum ${p.rs_momentum?.toFixed(1)} · ${p.share?.toFixed(1)}% of mktcap`}</title>
                 </circle>
+                <text x={left ? x - r - 3 : x + r + 3} y={y + 3} textAnchor={left ? "end" : "start"}
+                  fill={c} fontSize="8.5" fontWeight="700"
+                  stroke="rgb(var(--ink))" strokeWidth="2.4" paintOrder="stroke" strokeLinejoin="round">
+                  {code(p.sector)}
+                </text>
               </g>
             );
           })}
         </svg>
       </div>
 
-      {/* sector lists per quadrant */}
+      {/* legend: code → sector, grouped by quadrant */}
       <div className="grid grid-cols-2 gap-x-5 gap-y-3">
         {order.map((q) => {
           const list = quadrants[q] || [];
@@ -76,7 +101,10 @@ export default function RrgQuadrants({ rot }) {
               </div>
               <ul className="space-y-0.5">
                 {list.map((s) => (
-                  <li key={s} className="text-xs text-white/80 truncate">{s}</li>
+                  <li key={s} className="flex items-baseline gap-1.5 text-xs">
+                    <span className="font-mono text-[10px] font-bold shrink-0 w-11" style={{ color: Q[q].color }}>{code(s)}</span>
+                    <span className="text-white/75 truncate">{s}</span>
+                  </li>
                 ))}
                 {list.length === 0 && <li className="text-xs text-muted">—</li>}
               </ul>
