@@ -8,6 +8,10 @@ import MarketBrief from "./components/MarketBrief";
 import EarningsRadar from "./components/EarningsRadar";
 import IndexTicker from "./components/IndexTicker";
 import SmartMoneyBoard from "./components/SmartMoneyBoard";
+import RegimeBanner from "./components/RegimeBanner";
+import MultibaggerRadar from "./components/MultibaggerRadar";
+import QuietAccumulation from "./components/QuietAccumulation";
+import RrgQuadrants from "./components/RrgQuadrants";
 
 // Trim the scored universe to the fields the dashboard board renders, keep only
 // names smart money is meaningfully in (score >= 50), and pre-sort by score so
@@ -243,6 +247,9 @@ export default async function Dashboard() {
         Where institutional money moved on the last NSE session.
       </PageHeader>
 
+      {/* market regime — risk posture that colours the whole session */}
+      {d.regime && <RegimeBanner regime={d.regime} />}
+
       {/* top stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat label="FII Net" value={fmtCr(fii)} accent={fii >= 0 ? "text-up" : "text-down"}
@@ -296,6 +303,14 @@ export default async function Dashboard() {
         </Section>
       )}
 
+      {/* RRG — relative rotation quadrant map */}
+      {d.intel?.sector_rotation?.points?.length > 0 && (
+        <Section title="Sector Rotation Map (RRG)" href="/sectors" action="Sectors →" info="rrg"
+          desc="Relative strength vs its momentum, indexed to the market at 100 — which sectors money is rotating into (Leading/Improving) and out of (Weakening/Lagging).">
+          <RrgQuadrants rot={d.intel.sector_rotation} />
+        </Section>
+      )}
+
       {/* top gainers & losers */}
       {d.movers && <MoversBoard movers={d.movers} />}
 
@@ -338,6 +353,22 @@ export default async function Dashboard() {
           </div>
         )}
       </Section>
+
+      {/* KNN Multibagger Radar — analog-based probability picks */}
+      {d.multibaggers?.ok && d.multibaggers.picks?.length > 0 && (
+        <Section title="KNN Multibagger Radar" href="/forecast" action="Model detail →" info="multibaggers"
+          desc="Names whose delivery / volume / OI / momentum fingerprint matches historical setups that went on to run — ranked by modeled probability.">
+          <MultibaggerRadar mb={d.multibaggers} />
+        </Section>
+      )}
+
+      {/* Quiet Accumulation — delivery rising into price weakness */}
+      {d.intel?.divergence?.quiet?.length > 0 && (
+        <Section title="Quiet Accumulation" href="/intelligence" action="Intelligence →" info="divergence"
+          desc="Price flat-to-down but delivery-based buying trending up — smart money accumulating into weakness, before it shows on the tape.">
+          <QuietAccumulation quiet={d.intel.divergence.quiet} />
+        </Section>
+      )}
 
       {/* OI buildup */}
       <Section title="Derivatives — Open Interest Buildup" info="oi_buildup"
