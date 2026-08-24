@@ -11,7 +11,6 @@ import SmartMoneyBoard from "./components/SmartMoneyBoard";
 import RegimeBanner from "./components/RegimeBanner";
 import MultibaggerRadar from "./components/MultibaggerRadar";
 import QuietAccumulation from "./components/QuietAccumulation";
-import RrgQuadrants from "./components/RrgQuadrants";
 
 // Trim the scored universe to the fields the dashboard board renders, keep only
 // names smart money is meaningfully in (score >= 50), and pre-sort by score so
@@ -300,14 +299,6 @@ export default async function Dashboard() {
           desc="Composite return of every sector over your chosen window — pick a horizon, then spotlight a sector to see its stocks' min / median / max."
         >
           <SectorPerformanceChart data={d.sector_performance} />
-        </Section>
-      )}
-
-      {/* RRG — relative rotation quadrant map */}
-      {d.intel?.sector_rotation?.points?.length > 0 && (
-        <Section title="Sector Rotation Map (RRG)" href="/sectors" action="Sectors →" info="rrg"
-          desc="Relative strength vs its momentum, indexed to the market at 100 — which sectors money is rotating into (Leading/Improving) and out of (Weakening/Lagging).">
-          <RrgQuadrants rot={d.intel.sector_rotation} />
         </Section>
       )}
 
