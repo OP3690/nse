@@ -27,17 +27,29 @@ PICK_FIELDS = ("symbol", "company", "sector", "close", "prob", "lift",
                "median_analog_move", "neighbors_up", "neighbors_total", "score")
 
 
+def _nifty_from_snapshot(doc):
+    for x in (doc.get("headline_indices") or []):
+        if (x.get("label") or "").strip().upper() == "NIFTY 50":
+            return x.get("last")
+    return None
+
+
 def _pick_log(today_date=None, today_picks=None):
-    """date -> [pick,...] for every session the model published picks."""
-    log = {}
+    """Return (log, nifty) where log is date -> [pick,...] and nifty is
+    date -> NIFTY 50 close, both from the archived snapshots (the model's own
+    published history). Falls back to the local processed archive off-cloud."""
+    log, nifty = {}, {}
     client = mongo.get_client()
     if client is not None:
         try:
             db = client[os.environ.get("MONGODB_DB", "nseflow")]
-            for doc in db.snapshots.find({}, {"multibaggers.picks": 1}):
+            for doc in db.snapshots.find({}, {"multibaggers.picks": 1, "headline_indices": 1}):
                 picks = (doc.get("multibaggers") or {}).get("picks") or []
                 if picks:
                     log[doc["_id"]] = picks
+                nv = _nifty_from_snapshot(doc)
+                if nv:
+                    nifty[doc["_id"]] = nv
         finally:
             client.close()
     else:  # local dev: reconstruct from the processed archive
@@ -49,9 +61,12 @@ def _pick_log(today_date=None, today_picks=None):
             picks = (d.get("multibaggers") or {}).get("picks") or []
             if picks:
                 log[d["date"]] = picks
+            nv = _nifty_from_snapshot(d)
+            if nv:
+                nifty[d["date"]] = nv
     if today_date and today_picks:
         log[today_date] = today_picks  # include today's fresh picks (no fwd data yet)
-    return log
+    return log, nifty
 
 
 def _close_series(con, symbols):
@@ -64,19 +79,26 @@ def _close_series(con, symbols):
     return ser
 
 
-def _nifty_map(con):
-    return {d: v for d, v in con.execute(
-        "SELECT date, last FROM indices_daily WHERE [index]='NIFTY 50' AND last IS NOT NULL")}
+def _nifty_from_db(con):
+    try:
+        return {d: v for d, v in con.execute(
+            "SELECT date, last FROM indices_daily WHERE [index]='NIFTY 50' AND last IS NOT NULL")}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def build(con, today_date=None, today_picks=None):
-    log = _pick_log(today_date, today_picks)
+    log, nifty = _pick_log(today_date, today_picks)
     if not log:
-        return {"ok": False, "reason": "no pick history available"}
+        return {"meta": {"ok": False, "reason": "no pick history available"}}
+
+    # Prefer the archived snapshot closes (span the whole pick window); fill any
+    # gaps from indices_daily where it has them.
+    for d, v in _nifty_from_db(con).items():
+        nifty.setdefault(d, v)
 
     symbols = sorted({p["symbol"] for picks in log.values() for p in picks})
     series = _close_series(con, symbols)
-    nifty = _nifty_map(con)
 
     rows = []
     for date in sorted(log):
