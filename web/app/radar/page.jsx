@@ -57,38 +57,8 @@ export default async function RadarBacktestPage() {
         </div>
       )}
 
-      {/* per-horizon accuracy cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        {hz.map((k) => {
-          const s = summary[`d${k}`];
-          if (!s) return null;
-          return (
-            <div key={k} className="stat-tile">
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm font-bold text-muted">{k}D</span>
-                <span className="text-[10px] font-mono text-muted/70">n={s.n}</span>
-              </div>
-              <div className="text-2xl font-bold tabular-nums leading-none mt-1">
-                {s.hit}<span className="text-sm text-muted font-semibold">% hit</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-down/30 overflow-hidden flex mt-1">
-                <span className="bg-up/80 h-full" style={{ width: `${s.hit}%` }} />
-              </div>
-              <div className="mt-2 space-y-0.5 text-[11px] font-mono">
-                <div className="flex justify-between"><span className="text-muted font-sans">Avg</span><span className={s.avg >= 0 ? "text-up" : "text-down"}>{fmt(s.avg)}</span></div>
-                <div className="flex justify-between"><span className="text-muted font-sans">Median</span><span className={s.median >= 0 ? "text-up" : "text-down"}>{fmt(s.median)}</span></div>
-                <div className="flex justify-between border-t border-line/50 pt-0.5 mt-0.5"><span className="text-muted font-sans">vs NIFTY</span><span className={(s.avg_excess ?? 0) >= 0 ? "text-up" : "text-down"}>{fmt(s.avg_excess)}</span></div>
-                <div className="flex justify-between"><span className="text-muted font-sans">Beat idx</span><span className="text-white/80">{s.beat == null ? "—" : `${s.beat}%`}</span></div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="card p-5">
-        <h2 className="card-title mb-3">Every prediction</h2>
-        <RadarTable rows={bt.rows} horizons={hz} />
-      </div>
+      {/* reactive accuracy cards + prediction table (recompute on filter) */}
+      <RadarTable rows={bt.rows} horizons={hz} total={meta.total_predictions} />
 
       <div className="card border border-line bg-panel2/50">
         <div className="text-xs text-muted leading-relaxed">
