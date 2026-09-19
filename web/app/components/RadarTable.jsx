@@ -40,7 +40,7 @@ export default function RadarTable({ rows, horizons, total }) {
   const [settled, setSettled] = useState(false);
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState(-1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
 
   const val = (r, k) => (mode === "excess"
