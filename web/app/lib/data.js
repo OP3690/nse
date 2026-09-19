@@ -63,6 +63,20 @@ export async function getTooltips() {
   return latest?.tooltips || {};
 }
 
+// The KNN Multibagger Radar backtest (own Mongo doc, refreshed by the pipeline).
+export async function getRadarBacktest() {
+  const db = getDb();
+  if (db) {
+    try {
+      const doc = strip(await (await db).collection("meta").findOne({ _id: "radar_backtest" }));
+      if (doc) return doc;
+    } catch (e) {
+      console.error("mongo getRadarBacktest failed, falling back to JSON:", e.message);
+    }
+  }
+  return readJson("radar_backtest.json");
+}
+
 export async function listStockSymbols() {
   const db = getDb();
   if (db) {

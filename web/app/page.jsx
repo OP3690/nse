@@ -347,7 +347,7 @@ export default async function Dashboard() {
 
       {/* KNN Multibagger Radar — analog-based probability picks */}
       {d.multibaggers?.ok && d.multibaggers.picks?.length > 0 && (
-        <Section title="KNN Multibagger Radar" href="/forecast" action="Model detail →" info="multibaggers"
+        <Section title="KNN Multibagger Radar" href="/radar" action="See backtest →" info="multibaggers"
           desc="Names whose delivery / volume / OI / momentum fingerprint matches historical setups that went on to run — ranked by modeled probability.">
           <MultibaggerRadar mb={d.multibaggers} />
         </Section>

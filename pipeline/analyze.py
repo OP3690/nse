@@ -1103,12 +1103,27 @@ def run():
     forecasts = data.pop("_forecasts")
     corp_summary = data.pop("_corp_summary", {})
     stock_docs = emit_histories(con, data["screener"], histories, forecasts, corp_summary)
+
+    # Radar backtest: score every historical Multibagger pick against real forward
+    # prices + a NIFTY 50 benchmark. Best-effort — a hiccup must never break the
+    # refresh. Computed before con.close() since it reads price history.
+    backtest = None
+    try:
+        import radar_backtest
+        backtest = radar_backtest.build(
+            con, data.get("date"), (data.get("multibaggers") or {}).get("picks"))
+    except Exception as e:  # noqa: BLE001
+        print(f"  radar backtest skipped: {e!r}")
+
     con.close()
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     PROCESSED.mkdir(parents=True, exist_ok=True)
     (WEB_DATA / "latest.json").write_text(json.dumps(data, separators=(",", ":")))
     (PROCESSED / f"{data['date']}.json").write_text(json.dumps(data, separators=(",", ":")))
     mongo.push(data, stock_docs)  # cloud sync; no-op if MONGODB_URI unset
+    if backtest and backtest.get("meta", {}).get("ok"):
+        (WEB_DATA / "radar_backtest.json").write_text(json.dumps(backtest, separators=(",", ":")))
+        mongo.push_doc("meta", "radar_backtest", backtest)
     print(f"Analyzed {data['date']}: {data['market']['stocks']} stocks, "
           f"{len(data['sectors'])} sectors, "
           f"top score {data['top_accumulation'][0]['score'] if data['top_accumulation'] else 'n/a'}")

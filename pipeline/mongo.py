@@ -42,6 +42,24 @@ def get_client():
         return None
 
 
+def push_doc(collection: str, doc_id: str, payload: dict) -> bool:
+    """Upsert a single standalone doc (e.g. the radar backtest) into its own
+    collection, keyed by doc_id. Best-effort; never raises."""
+    client = get_client()
+    if client is None:
+        return False
+    try:
+        db = client[os.environ.get("MONGODB_DB", "nseflow")]
+        db[collection].replace_one({"_id": doc_id}, {"_id": doc_id, **payload}, upsert=True)
+        print(f"  + mongo: synced {collection}/{doc_id}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"  ! mongo: {collection}/{doc_id} sync failed ({e})")
+        return False
+    finally:
+        client.close()
+
+
 def push(latest: dict, stock_docs: list[dict]) -> bool:
     """Upsert the latest payload, archive it by date, and replace all stock docs.
     Returns True on success, False if skipped/failed (never raises)."""
