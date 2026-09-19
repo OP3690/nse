@@ -4,6 +4,7 @@ import { PageHeader } from "../components/ui";
 import RadarTable from "../components/RadarTable";
 import RadarTargetChart from "../components/RadarTargetChart";
 import RadarSimulator from "../components/RadarSimulator";
+import RadarBatchSimulator from "../components/RadarBatchSimulator";
 
 export const dynamic = "force-dynamic";
 
@@ -71,13 +72,26 @@ export default async function RadarBacktestPage() {
         </div>
       )}
 
-      {/* roll-forward capital simulator */}
+      {/* basket simulator: split N ways, hold a fixed horizon, reinvest */}
+      {bt.rows?.some((r) => r.xd5 != null) && (
+        <div className="card p-5">
+          <h2 className="card-title mb-1">Basket simulator · fixed hold</h2>
+          <p className="text-xs text-muted mb-4 max-w-2xl">
+            Split your capital equally across the day’s top picks, hold every leg for a fixed number of days, then
+            exit the whole basket and reinvest in the next day’s picks. Set the capital, split, holding period and a
+            probability filter.
+          </p>
+          <RadarBatchSimulator rows={bt.rows} />
+        </div>
+      )}
+
+      {/* target-exit simulator: one position, sell at target %, roll forward */}
       {bt.rows?.some((r) => r.sx5 != null) && (
         <div className="card p-5">
-          <h2 className="card-title mb-1">Strategy simulator</h2>
+          <h2 className="card-title mb-1">Target-exit simulator · sell on gain</h2>
           <p className="text-xs text-muted mb-4 max-w-2xl">
-            Put money on the highest-probability pick, sell when it hits your target, roll the proceeds into the next
-            pick, and repeat down the archived history — a mechanical “what if I’d kept recycling this capital?”.
+            Put money on the highest-probability pick, sell the instant it hits your target, roll the proceeds into
+            the next pick, and repeat — a mechanical “what if I’d kept recycling this capital on a fixed take-profit?”.
           </p>
           <RadarSimulator rows={bt.rows} />
         </div>

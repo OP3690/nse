@@ -127,6 +127,27 @@ export default function RadarTable({ rows, horizons, total }) {
       {/* prediction table */}
       <div className="card p-5">
         <h2 className="card-title mb-3">Every prediction</h2>
+        {/* prominent search */}
+        <div className="relative mb-3 group">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-accent transition-colors pointer-events-none">
+            <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by symbol or company…"
+            aria-label="Search predictions by stock symbol or company" autoComplete="off" spellCheck="false"
+            className="w-full rounded-xl border border-line/80 bg-panel2/50 pl-11 pr-28 py-2.5 text-sm text-white/90 placeholder:text-muted/60 focus:border-accent/60 focus:bg-panel2/70 focus:outline-none focus:ring-2 focus:ring-accent/25 transition-colors" />
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+            <span className="text-[11px] text-muted tabular-nums whitespace-nowrap">
+              {q ? <><b className="text-white/90">{sorted.length}</b> match{sorted.length === 1 ? "" : "es"}</> : <>{rows.length} total</>}
+            </span>
+            {q && (
+              <button type="button" onClick={() => setQ("")} aria-label="Clear search"
+                className="w-5 h-5 grid place-items-center rounded-full bg-line/50 text-muted hover:text-white hover:bg-line transition-colors text-sm leading-none">×</button>
+            )}
+          </div>
+        </div>
+
+        {/* filter chips */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <div className="inline-flex rounded-lg border border-line/70 bg-panel2/40 p-0.5 text-[11px] font-semibold">
             {[["return", "Return"], ["excess", "vs NIFTY"]].map(([k, l]) => (
@@ -148,19 +169,6 @@ export default function RadarTable({ rows, horizons, total }) {
           <label className="text-xs text-muted flex items-center gap-1.5">
             <input type="checkbox" checked={settled} onChange={(e) => setSettled(e.target.checked)} /> Settled only
           </label>
-          <div className="relative group">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2"
-              strokeLinecap="round" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-accent transition-colors pointer-events-none">
-              <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
-            </svg>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search stock…" aria-label="Search stock symbol or name"
-              className="rounded-lg border border-line/70 bg-panel2/40 pl-8 pr-7 py-1.5 text-xs text-white/90 placeholder:text-muted/60 w-[150px] focus:w-[210px] focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25 transition-all" />
-            {q && (
-              <button type="button" onClick={() => setQ("")} aria-label="Clear search"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 grid place-items-center rounded-full text-muted hover:text-white hover:bg-line/60 transition-colors text-[13px] leading-none">×</button>
-            )}
-          </div>
-          <span className="ml-auto text-xs text-muted"><b className="text-white/90">{sorted.length}</b> of {rows.length}</span>
         </div>
 
         <div className="overflow-x-auto">
