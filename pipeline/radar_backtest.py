@@ -23,7 +23,8 @@ PROCESSED = ROOT / "data" / "processed"
 
 HORIZONS = [1, 2, 3, 5, 15, 30]
 TARGETS = [2, 5, 10, 15, 20]   # cumulative return goals for the time-to-target curve
-MAXD = 30              # trading-day window for first-passage
+SIM_TARGETS = [2, 5, 10]       # goals the roll-forward simulator can chain on
+MAXD = 30              # trading-day window for first-passage / max hold
 # fields we keep from each stored pick
 PICK_FIELDS = ("symbol", "company", "sector", "close", "prob", "lift",
                "median_analog_move", "neighbors_up", "neighbors_total", "score")
@@ -138,6 +139,14 @@ def build(con, today_date=None, today_picks=None):
                             first[t] = d
                 for t in TARGETS:
                     tfp[t].append(first[t])
+                # per-pick simulator exit: take-profit at the target (first-passage),
+                # else max-hold to day MAXD. Stores the realised exit return + the
+                # calendar exit date so the web can chain trades by date.
+                for t in SIM_TARGETS:
+                    d = first[t] if first[t] is not None else MAXD
+                    r[f"sr{t}"] = round((ser[i + d][1] / base - 1) * 100, 2)
+                    r[f"sx{t}"] = ser[i + d][0]
+                    r[f"hh{t}"] = first[t] is not None
             # tidy: drop the raw neighbor counts now that agree% is derived
             r.pop("neighbors_up", None)
             r.pop("neighbors_total", None)
