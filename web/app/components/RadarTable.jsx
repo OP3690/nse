@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SymbolLink } from "./ui";
 
 // Interactive board for the Radar backtest: per-horizon accuracy cards + the full
@@ -40,6 +40,8 @@ export default function RadarTable({ rows, horizons, total }) {
   const [settled, setSettled] = useState(false);
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState(-1);
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(1);
 
   const val = (r, k) => (mode === "excess"
     ? (r[`d${k}`] != null && r[`b${k}`] != null ? +(r[`d${k}`] - r[`b${k}`]).toFixed(2) : null)
@@ -69,6 +71,13 @@ export default function RadarTable({ rows, horizons, total }) {
     });
     return out;
   }, [matched, sortKey, sortDir, mode]);
+
+  // Any filter/sort/size change returns to page 1 so you never land on an empty page.
+  useEffect(() => { setPage(1); }, [q, minProb, settled, sortKey, sortDir, pageSize]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const curPage = Math.min(page, pageCount);
+  const start = (curPage - 1) * pageSize;
+  const pageRows = sorted.slice(start, start + pageSize);
 
   const clickSort = (k) => {
     if (k === sortKey) setSortDir((d) => -d);
@@ -155,8 +164,8 @@ export default function RadarTable({ rows, horizons, total }) {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((r, i) => (
-                <tr key={`${r.date}-${r.symbol}-${i}`} className="hover:bg-panel2/50">
+              {pageRows.map((r, i) => (
+                <tr key={`${r.date}-${r.symbol}-${start + i}`} className="hover:bg-panel2/50">
                   <td className="td font-mono text-xs text-muted">{r.date}</td>
                   <td className="td">
                     <SymbolLink symbol={r.symbol} name={r.company} />
@@ -177,6 +186,32 @@ export default function RadarTable({ rows, horizons, total }) {
             </tbody>
           </table>
         </div>
+
+        {/* pagination */}
+        {sorted.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 mt-3 text-xs">
+            <label className="text-muted flex items-center gap-1.5">Rows
+              <select value={pageSize} onChange={(e) => setPageSize(+e.target.value)}
+                className="rounded-lg border border-line/70 bg-panel2/40 px-2 py-1 text-xs text-white/90">
+                {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <span className="text-muted tabular-nums">
+              {start + 1}–{Math.min(start + pageSize, sorted.length)} of <b className="text-white/90">{sorted.length}</b>
+            </span>
+            <div className="ml-auto flex items-center gap-1">
+              <button type="button" onClick={() => setPage(1)} disabled={curPage === 1}
+                className="px-2 py-1 rounded-md border border-line/70 text-muted enabled:hover:text-white enabled:hover:border-accent/50 disabled:opacity-40 transition-colors" aria-label="First page">«</button>
+              <button type="button" onClick={() => setPage(curPage - 1)} disabled={curPage === 1}
+                className="px-2 py-1 rounded-md border border-line/70 text-muted enabled:hover:text-white enabled:hover:border-accent/50 disabled:opacity-40 transition-colors" aria-label="Previous page">‹ Prev</button>
+              <span className="px-2 text-muted tabular-nums">Page <b className="text-white/90">{curPage}</b> / {pageCount}</span>
+              <button type="button" onClick={() => setPage(curPage + 1)} disabled={curPage === pageCount}
+                className="px-2 py-1 rounded-md border border-line/70 text-muted enabled:hover:text-white enabled:hover:border-accent/50 disabled:opacity-40 transition-colors" aria-label="Next page">Next ›</button>
+              <button type="button" onClick={() => setPage(pageCount)} disabled={curPage === pageCount}
+                className="px-2 py-1 rounded-md border border-line/70 text-muted enabled:hover:text-white enabled:hover:border-accent/50 disabled:opacity-40 transition-colors" aria-label="Last page">»</button>
+            </div>
+          </div>
+        )}
         <p className="text-[10px] text-muted/80 leading-snug mt-2">
           {mode === "excess"
             ? "Excess = the pick's return minus the NIFTY 50 return over the identical holding window. Positive = it beat holding the index."
