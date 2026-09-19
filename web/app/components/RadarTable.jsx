@@ -148,8 +148,18 @@ export default function RadarTable({ rows, horizons, total }) {
           <label className="text-xs text-muted flex items-center gap-1.5">
             <input type="checkbox" checked={settled} onChange={(e) => setSettled(e.target.checked)} /> Settled only
           </label>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search symbol…"
-            className="rounded-lg border border-line/70 bg-panel2/40 px-2.5 py-1.5 text-xs text-white/90 placeholder:text-muted/70 w-[130px]" />
+          <div className="relative group">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2"
+              strokeLinecap="round" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-accent transition-colors pointer-events-none">
+              <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search stock…" aria-label="Search stock symbol or name"
+              className="rounded-lg border border-line/70 bg-panel2/40 pl-8 pr-7 py-1.5 text-xs text-white/90 placeholder:text-muted/60 w-[150px] focus:w-[210px] focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25 transition-all" />
+            {q && (
+              <button type="button" onClick={() => setQ("")} aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 grid place-items-center rounded-full text-muted hover:text-white hover:bg-line/60 transition-colors text-[13px] leading-none">×</button>
+            )}
+          </div>
           <span className="ml-auto text-xs text-muted"><b className="text-white/90">{sorted.length}</b> of {rows.length}</span>
         </div>
 

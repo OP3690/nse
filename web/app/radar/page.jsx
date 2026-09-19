@@ -3,6 +3,7 @@ import { getRadarBacktest } from "../lib/data";
 import { PageHeader } from "../components/ui";
 import RadarTable from "../components/RadarTable";
 import RadarTargetChart from "../components/RadarTargetChart";
+import RadarSimulator from "../components/RadarSimulator";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,18 @@ export default async function RadarBacktestPage() {
             e.g. “if my goal is +5%, how often and how fast is it hit?”. Pick a goal, or “All” to compare.
           </p>
           <RadarTargetChart targets={bt.targets} />
+        </div>
+      )}
+
+      {/* roll-forward capital simulator */}
+      {bt.rows?.some((r) => r.sx5 != null) && (
+        <div className="card p-5">
+          <h2 className="card-title mb-1">Strategy simulator</h2>
+          <p className="text-xs text-muted mb-4 max-w-2xl">
+            Put money on the highest-probability pick, sell when it hits your target, roll the proceeds into the next
+            pick, and repeat down the archived history — a mechanical “what if I’d kept recycling this capital?”.
+          </p>
+          <RadarSimulator rows={bt.rows} />
         </div>
       )}
 
