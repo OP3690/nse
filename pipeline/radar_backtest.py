@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parent
 PROCESSED = ROOT / "data" / "processed"
 
 HORIZONS = [1, 2, 3, 5, 15, 30]
+TARGETS = [2, 5, 10, 15, 20]   # cumulative return goals for the time-to-target curve
+MAXD = 30              # trading-day window for first-passage
 # fields we keep from each stored pick
 PICK_FIELDS = ("symbol", "company", "sector", "close", "prob", "lift",
                "median_analog_move", "neighbors_up", "neighbors_total", "score")
@@ -100,6 +102,11 @@ def build(con, today_date=None, today_picks=None):
     symbols = sorted({p["symbol"] for picks in log.values() for p in picks})
     series = _close_series(con, symbols)
 
+    # Time-to-target: for a "mature" pick (a full MAXD-day window of forward data),
+    # the first trading day its cumulative close-return crosses each target. Uses
+    # the daily path, so a target touched between horizon marks still counts.
+    tfp = {t: [] for t in TARGETS}   # first-passage day per mature pick (None = never)
+
     rows = []
     for date in sorted(log):
         for p in log[date]:
@@ -120,6 +127,17 @@ def build(con, today_date=None, today_picks=None):
                         br = round((nifty[fwd_date] / nifty[date] - 1) * 100, 2)
                 r[f"d{k}"] = sr
                 r[f"b{k}"] = br
+            # first-passage to each target over the daily path (mature picks only)
+            if i is not None and i + MAXD < len(ser) and ser[i][1]:
+                base = ser[i][1]
+                first = {t: None for t in TARGETS}
+                for d in range(1, MAXD + 1):
+                    cum = (ser[i + d][1] / base - 1) * 100
+                    for t in TARGETS:
+                        if first[t] is None and cum >= t:
+                            first[t] = d
+                for t in TARGETS:
+                    tfp[t].append(first[t])
             # tidy: drop the raw neighbor counts now that agree% is derived
             r.pop("neighbors_up", None)
             r.pop("neighbors_total", None)
@@ -166,6 +184,28 @@ def build(con, today_date=None, today_picks=None):
         return round(num / den, 3) if den else None
 
     summary = {f"d{k}": agg(k) for k in HORIZONS}
+
+    # Time-to-target curves: cumulative share of mature picks that have reached
+    # each target by day d (a monotonic hit-probability trendline).
+    n_mature = len(tfp[TARGETS[0]]) if TARGETS else 0
+    days = list(range(1, MAXD + 1))
+
+    def curve(t):
+        fp = tfp[t]
+        count = [sum(1 for x in fp if x is not None and x <= d) for d in days]
+        prob = [round(100 * c / n_mature, 1) if n_mature else 0 for c in count]
+        hits = sorted(x for x in fp if x is not None)
+        return {
+            "count": count,
+            "prob": prob,
+            "hit": len(hits),
+            "pct": round(100 * len(hits) / n_mature, 1) if n_mature else 0,
+            "median_days": hits[len(hits) // 2] if hits else None,
+        }
+
+    targets = {"N": n_mature, "max_day": MAXD, "days": days,
+               "levels": {str(t): curve(t) for t in TARGETS}}
+
     dates = sorted(log)
     meta = {
         "ok": True,
@@ -180,4 +220,4 @@ def build(con, today_date=None, today_picks=None):
         "ic_prob_vs_30d": rank_ic("d30"),
         "generated_for": today_date or dates[-1],
     }
-    return {"meta": meta, "summary": summary, "rows": rows}
+    return {"meta": meta, "summary": summary, "rows": rows, "targets": targets}

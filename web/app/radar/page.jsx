@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getRadarBacktest } from "../lib/data";
 import { PageHeader } from "../components/ui";
 import RadarTable from "../components/RadarTable";
+import RadarTargetChart from "../components/RadarTargetChart";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,18 @@ export default async function RadarBacktestPage() {
             rather than next-day pops. The <b className="text-white/80">vs NIFTY</b> view below is the real test: whether
             a pick beat simply holding the index.
           </p>
+        </div>
+      )}
+
+      {/* time-to-target: probability of reaching a cumulative goal by day X */}
+      {bt.targets?.N > 0 && (
+        <div className="card p-5">
+          <h2 className="card-title mb-1">Time to target</h2>
+          <p className="text-xs text-muted mb-4 max-w-2xl">
+            Of the picks with a full 30-day window, the share that reached a cumulative goal by each day —
+            e.g. “if my goal is +5%, how often and how fast is it hit?”. Pick a goal, or “All” to compare.
+          </p>
+          <RadarTargetChart targets={bt.targets} />
         </div>
       )}
 
