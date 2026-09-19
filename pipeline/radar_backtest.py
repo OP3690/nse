@@ -126,6 +126,7 @@ def build(con, today_date=None, today_picks=None):
                     sr = round((ser[i + k][1] / ser[i][1] - 1) * 100, 2)
                     if date in nifty and fwd_date in nifty and nifty[date]:
                         br = round((nifty[fwd_date] / nifty[date] - 1) * 100, 2)
+                    r[f"xd{k}"] = fwd_date  # calendar exit date at this horizon (chains batches)
                 r[f"d{k}"] = sr
                 r[f"b{k}"] = br
             # first-passage to each target over the daily path (mature picks only)
