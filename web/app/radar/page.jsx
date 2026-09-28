@@ -19,7 +19,10 @@ export default async function RadarBacktestPage() {
   }
   const { meta, summary } = bt;
   const hz = meta.horizons;
-  const last = summary[`d${hz[hz.length - 1]}`];
+  // Headline pins to ~1 month (the model's design horizon), so adding longer
+  // columns like 45D/60D doesn't swing the verdict on a thinner sample.
+  const HEAD_HZ = summary.d30 ? 30 : hz[hz.length - 1];
+  const last = summary[`d${HEAD_HZ}`];
   const first = summary.d1;
 
   return (
@@ -44,7 +47,7 @@ export default async function RadarBacktestPage() {
       {last && first && (
         <div className="card p-5">
           <p className="text-lg font-semibold leading-relaxed">
-            Over {hz[hz.length - 1]} trading days the picks hit{" "}
+            Over {HEAD_HZ} trading days the picks hit{" "}
             <span className={last.hit >= 50 ? "text-up" : "text-down"}>{last.hit}%</span> positive,
             averaging <span className={last.avg >= 0 ? "text-up" : "text-down"}>{fmt(last.avg)}</span>
             {last.avg_excess != null && <> and <span className={last.avg_excess >= 0 ? "text-up" : "text-down"}>{fmt(last.avg_excess)}</span> vs NIFTY</>} —

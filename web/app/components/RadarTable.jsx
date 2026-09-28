@@ -100,7 +100,7 @@ export default function RadarTable({ rows, horizons, total }) {
             <b className="text-white/90 tabular-nums">{matched.length}</b> of {total} predictions
           </span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-3">
           {cards.map(([k, s]) => (
             <div key={k} className="stat-tile">
               <div className="flex items-baseline justify-between">
@@ -172,7 +172,7 @@ export default function RadarTable({ rows, horizons, total }) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: 720 }}>
+          <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr>
                 <Th k="date">Date</Th>
