@@ -21,7 +21,7 @@ import mongo
 ROOT = Path(__file__).resolve().parent
 PROCESSED = ROOT / "data" / "processed"
 
-HORIZONS = [1, 2, 3, 5, 15, 30]
+HORIZONS = [1, 2, 3, 5, 15, 30, 45, 60]
 TARGETS = [2, 5, 10, 15, 20]   # cumulative return goals for the time-to-target curve
 MAXD = 30              # trading-day window for first-passage
 # fields we keep from each stored pick
